@@ -639,8 +639,9 @@ class Handler(BaseHTTPRequestHandler):
                         safe_emit({"type": "status",
                                    "message": f"Loading {backend.label}… (first use may download weights)"})
                         _free_other_backends(backend)   # constrained Macs: don't stack two pipelines
-                    elif params.get("loras"):   # a changed LoRA set reloads inside generate — say so
-                        safe_emit({"type": "status", "message": "Applying LoRA(s)… (re-fuses the model)"})
+                    elif params.get("loras"):   # applying a LoRA set inside generate — say so (mflux
+                        # re-fuses the model; Krea 2 swaps a runtime branch — both are a short pause)
+                        safe_emit({"type": "status", "message": "Applying LoRA(s)…"})
                     out = backend.generate(prompt=str(req.get("prompt", "")), variant=variant,
                                            params=params, step_callback=step)
                     if _CANCEL.is_set():  # stopped after the last step, or by a backend that doesn't tick

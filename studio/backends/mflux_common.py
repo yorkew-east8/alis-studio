@@ -225,7 +225,7 @@ def _lora_params():
         {"key": "loras", "label": "LoRA", "type": "loras", "group": "LoRA",
          "hint": "Style/subject adapters applied on top of the model — pick ones made for THIS "
                  "model family. On Civitai copy the Download button's link (not the page URL). "
-                 "Changing the set re-fuses the model (a short pause before the first step)."},
+                 "Changing the set is applied before the run (a short pause before the first step)."},
     ]
 
 

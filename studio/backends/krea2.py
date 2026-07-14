@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 
 from .base import Backend
-from .mflux_common import _img2img_args, _img2img_params
+from .mflux_common import _img2img_args, _img2img_params, _lora_args, _lora_params
 
 
 class Krea2Backend(Backend):
@@ -40,6 +40,7 @@ class Krea2Backend(Backend):
          "default": "", "enabled": False,
          "hint": "Distilled Turbo runs without guidance, so a negative prompt has no effect."},
         *_img2img_params(),   # Input image + Strength — krea2-alis-mlx >= 0.2 does rectified-flow img2img
+        *_lora_params(),      # LoRA library — krea2-alis-mlx >= 0.3 applies runtime low-rank adapters
     ]
     catalog = [
         {"variant": "8bit", "label": "8-bit · best quality", "size_gb": 14.2, "note": "near-lossless"},
@@ -77,18 +78,38 @@ class Krea2Backend(Backend):
         return self._pipe
 
     def generate(self, *, prompt, variant, params, step_callback):
+        from krea2.pipeline import Krea2Pipeline
         image_path, strength = _img2img_args(params)   # (None, None) = plain txt2img
+        lora_paths, lora_scales = _lora_args(params)   # (None, None) = no LoRA (server pre-resolves names→paths)
         kwargs = {}
         if image_path:
             import inspect
-            from krea2.pipeline import Krea2Pipeline
             # capability check BEFORE _get — don't load 14 GB of weights just to fail on an old package
             if "init_image" not in inspect.signature(Krea2Pipeline.generate).parameters:  # pre-0.2
                 raise ValueError("This build of krea2-alis-mlx predates img2img — update it with "
                                  "`pip install -U git+https://github.com/avlp12/krea2_alis_mlx` "
                                  "(or reinstall the app), or remove the input image.")
             kwargs = {"init_image": image_path, "strength": strength}
+        if lora_paths and not hasattr(Krea2Pipeline, "set_loras"):   # pre-0.3 — check before the big load
+            raise ValueError("This build of krea2-alis-mlx predates LoRA support — update it with "
+                             "`pip install -U git+https://github.com/avlp12/krea2_alis_mlx` "
+                             "(or reinstall the app), or clear the selected LoRA(s).")
         pipe = self._get(variant)
+        # Krea 2 LoRA is a runtime low-rank branch (not fused at load), so the set is applied per
+        # generation without reloading — set_loras is a cheap no-op when unchanged, and clearing it
+        # (empty specs) reverts to base when nothing is selected. A wrong-base LoRA raises here,
+        # before any denoise work. Guarded so an old package (no set_loras) still runs plain.
+        if hasattr(pipe, "set_loras"):
+            specs = list(zip(lora_paths, lora_scales)) if lora_paths else []
+            try:
+                pipe.set_loras(specs)
+            except ValueError as e:
+                # Only claim "wrong model" for the base-mismatch signatures — a malformed file
+                # (unpaired A/B, unknown key, collision) raises too, and that hint would mislead.
+                mismatch = any(s in str(e) for s in
+                               ("doesn't exist in the model tree", "not a linear layer", "shape mismatch"))
+                hint = " A LoRA must be built for Krea 2 Turbo — one made for a different model won't fit." if mismatch else ""
+                raise ValueError(f"Couldn't apply the selected LoRA to Krea 2 Turbo: {e}{hint}") from None
         return pipe.generate(
             prompt,
             width=int(params.get("width", params.get("size", 1024))),

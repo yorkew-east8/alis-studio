@@ -93,9 +93,11 @@ too large to ship inside a DMG.
 - **LoRA** — a shared library for style/subject adapters: paste a download URL (on Civitai, the
   **Download button's link**, not the page URL; on Hugging Face, the file's `/resolve/` URL) or a
   local `.safetensors`, check the ones to apply, set per-LoRA strength — multiple LoRAs stack, and
-  Civitai's usual key formats are recognized automatically. Works on Z-Image, CyberRealistic Z,
-  Qwen-Image (+Edit), and FLUX — pick LoRAs made for the selected model family. (Z-Image has the
-  largest LoRA scene on Civitai.) Auth-gated Civitai files need `CIVITAI_API_TOKEN` in the
+  Civitai's usual key formats are recognized automatically. Works on **Krea 2 Turbo**, Z-Image,
+  CyberRealistic Z, Qwen-Image (+Edit), and FLUX — pick LoRAs made for the selected model family.
+  (On Krea 2 the adapters are applied as a runtime low-rank branch — never merged into the weights —
+  so they stack and revert cleanly with no reload. Z-Image has the largest LoRA scene on Civitai.)
+  Auth-gated Civitai files need `CIVITAI_API_TOKEN` in the
   environment (free key from civitai.com/user/account) — easiest when running from a terminal.
 - **Restore settings & reproducibility** — every generated image keeps its full recipe (model, size,
   steps, seed, LoRAs); one lightbox click restores everything for a re-run or a tweak (restoring
@@ -136,7 +138,7 @@ automatically (two pipelines won't fit); bigger Macs keep it cached for instant 
 
 | Model | Builds | Download |
 |---|---|---|
-| **Krea 2 Turbo** | 8-bit (14.2 GB) · mixed-4/8 (9.8 GB). 8-step Turbo. Wants ≥ 24 GB RAM. | managed in-app (resumable, with progress) |
+| **Krea 2 Turbo** | 8-bit (14.2 GB) · mixed-4/8 (9.8 GB). 8-step Turbo. Wants ≥ 24 GB RAM. img2img + LoRA. | managed in-app (resumable, with progress) |
 | **Z-Image Turbo** | 4-bit (~6 GB) · 8-bit · bf16. 9-step Turbo, Apache-2.0. **Runs on 16 GB**; multilingual (Qwen3 encoder). | auto on first use via mflux |
 | **CyberRealistic Z** | 4-bit (~5.5 GB, **runs on 16 GB**) · 8-bit (~10 GB, ≥ 24 GB). [Civitai](https://civitai.com/models/2218365) photorealism finetune of Z-Image Turbo by [Cyberdelia](https://civitai.com/user/Cyberdelia) (OpenRAIL-M). Separate weights from the base model. | auto on first use ([mlx build](https://huggingface.co/avlp12/CyberRealistic-Z-Image-Turbo-v4-mflux-4bit)) |
 | **Qwen-Image** | 8-bit, bf16. Apache-2.0, open. (No 4-bit — its ~20B transformer gets grainy below 8-bit.) | auto on first use via mflux (~40 GB) |
