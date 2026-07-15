@@ -1,7 +1,8 @@
 # Alis Studio runs on the Python standard library alone. Backends bring their own deps:
 #
 # Krea 2 Turbo backend — the pure-MLX port (pulls mlx, mflux, transformers, …):
-krea2-alis-mlx @ git+https://github.com/avlp12/krea2_alis_mlx.git
+# pinned to v0.3.0 — the release that added runtime LoRA (set_loras), which the Krea 2 backend uses.
+krea2-alis-mlx @ git+https://github.com/avlp12/krea2_alis_mlx.git@v0.3.0
 
 # Optional — run as a native desktop window (`python3 desktop.py`); also: pip install "alis-studio[desktop]"
 # pywebview>=5,<7

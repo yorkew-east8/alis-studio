@@ -8,6 +8,20 @@ The version lives in exactly one place — `studio/__version__` (in `studio/__in
 `pyproject.toml` reads it via `[tool.setuptools.dynamic]`, the server injects it into the
 web UI, and the DMG build stamps it into the app bundle.
 
+## [0.9.1] — 2026-07-14
+
+### Added
+- **LoRA on Krea 2 Turbo.** The LoRA library now feeds the Krea 2 backend too, via `krea2-alis-mlx`
+  0.3.0's runtime adapters — the adapter is applied as a low-rank branch over the (quantized)
+  transformer, never merged into the weights, so LoRAs **stack** and **revert cleanly with no
+  reload**. Same shared library and per-LoRA strength as the mflux models; pick LoRAs built for
+  Krea 2 (a wrong-base LoRA is rejected with a clear message before any denoising). The `krea2-alis-mlx`
+  dependency is pinned to **v0.3.0** (the release that added `set_loras`).
+
+### Changed
+- The "Applying LoRA(s)…" status and the LoRA hint no longer say "re-fuses the model" — accurate for
+  the mflux backends but not for Krea 2's runtime-branch swap; the wording now fits both.
+
 ## [0.9.0] — 2026-07-07
 
 ### Added

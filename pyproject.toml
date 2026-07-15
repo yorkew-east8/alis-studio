@@ -21,7 +21,7 @@ classifiers = [
 # The app itself is pure standard library. The default Krea 2 Turbo backend is pulled from GitHub;
 # mflux powers the Z-Image / FLUX / Qwen-Image backends (>=0.18 ships the Z-Image MLX model).
 dependencies = [
-    "krea2-alis-mlx @ git+https://github.com/avlp12/krea2_alis_mlx.git",
+    "krea2-alis-mlx @ git+https://github.com/avlp12/krea2_alis_mlx.git@v0.3.0",  # v0.3.0 = runtime LoRA (set_loras)
     "mflux>=0.18,<0.19",
 ]
 
