@@ -3,6 +3,7 @@
 Mirrors the krea2 package's resilient downloader (plain HTTP to the HF CDN, resumable, integrity-
 checked) but reports progress to a callback instead of printing — so the model manager can show a
 live bar. We bypass huggingface_hub's Xet client on purpose (it can hang behind some firewalls).
+Sends the user's Hugging Face token when one is available — krea/Krea-2-Turbo is a gated repo now.
 """
 
 from __future__ import annotations
@@ -10,10 +11,42 @@ from __future__ import annotations
 import os
 
 
+def _auth(url: str) -> dict:
+    """Bearer token for huggingface.co URLs (krea/Krea-2-Turbo is now a gated repo).
+
+    Reads HF_TOKEN and the token stored by `hf auth login` — the stored one is what works for
+    the Mac app, which inherits no shell env when launched from Finder.
+    """
+    if not url.startswith("https://huggingface.co/"):
+        return {}
+    try:
+        from krea2.pipeline import _auth_headers  # krea2-alis-mlx >= 0.3.1
+        return _auth_headers()
+    except Exception:
+        try:
+            from huggingface_hub import get_token
+            token = (get_token() or "").strip()
+        except Exception:
+            token = (os.environ.get("HF_TOKEN") or "").strip()
+        return {"Authorization": f"Bearer {token}"} if token else {}
+
+
+def _gate_error(url: str, status: int) -> RuntimeError:
+    repo = "/".join(url.split("/")[3:5])  # https://huggingface.co/<org>/<name>/resolve/...
+    return RuntimeError(
+        f"{repo} requires Hugging Face access ({status}). One-time setup: "
+        f"1) visit https://huggingface.co/{repo} while logged in and accept the terms; "
+        "2) run `hf auth login` (or `huggingface-cli login`) in Terminal. Then retry the download."
+    )
+
+
 def _head_size(url: str) -> int:
     import requests
     try:
-        return int(requests.head(url, allow_redirects=True, timeout=30).headers.get("content-length") or 0)
+        r = requests.head(url, headers=_auth(url), allow_redirects=True, timeout=30)
+        # a 401/403 answer carries the error page's length, not the file's — treat as unknown,
+        # or a leftover .part bigger than the error page gets deleted as "stale" (data loss)
+        return int(r.headers.get("content-length") or 0) if r.ok else 0
     except Exception:
         return 0
 
@@ -30,9 +63,14 @@ def _download_one(url: str, dest: str, total: int, on_bytes) -> None:
     if total and pos > total:         # stale/corrupt leftover
         os.remove(tmp)
         pos = 0
-    headers = {"Range": f"bytes={pos}-"} if pos else {}
+    headers = {**_auth(url), **({"Range": f"bytes={pos}-"} if pos else {})}
     with requests.get(url, headers=headers, stream=True, timeout=(30, 120), allow_redirects=True) as r:
-        r.raise_for_status()  # HTTP errors surface as-is, not as a resume hint
+        if r.status_code == 416 and pos:  # unknowable total + stale/complete .part -> restart clean
+            os.remove(tmp)
+            return _download_one(url, dest, total, on_bytes)
+        if r.status_code in (401, 403):   # gated repo: raise setup instructions, not a bare 401
+            raise _gate_error(url, r.status_code)
+        r.raise_for_status()  # other HTTP errors surface as-is, not as a resume hint
         resume = bool(pos) and r.status_code == 206
         pos = pos if resume else 0
         total = total or (pos + int(r.headers.get("content-length") or 0))
@@ -59,7 +97,10 @@ def download_files(specs, progress) -> None:
     grand = sum(sizes)
     base = 0
     for (url, dest), sz in zip(specs, sizes):
-        if os.path.exists(dest) and sz and os.path.getsize(dest) == sz:
+        exists = os.path.exists(dest) and os.path.getsize(dest) > 0
+        if exists and ((sz and os.path.getsize(dest) == sz) or not sz):
+            # size match, or the pre-flight couldn't answer (gate/offline) — trust the cached file
+            # rather than brick a complete install
             base += sz
             progress(base, grand)
             continue

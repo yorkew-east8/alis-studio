@@ -52,7 +52,7 @@ find "$RES/python/lib" -name 'EXTERNALLY-MANAGED' -delete 2>/dev/null || true
 # --- 2) install runtime deps INTO the bundled interpreter -----------------------------------
 echo "  • installing runtime deps into the bundle (mlx, mflux, transformers, pywebview, Krea 2 Turbo backend)…"
 uv pip install --python "$BPY" \
-  "krea2-alis-mlx @ git+https://github.com/avlp12/krea2_alis_mlx.git" \
+  "krea2-alis-mlx @ git+https://github.com/avlp12/krea2_alis_mlx.git@v0.3.1" \
   "pywebview>=5,<7" \
   "mlx-lm>=0.20"
 
