@@ -248,7 +248,7 @@ textarea.fld{height:auto;min-height:54px;padding:8px 10px;resize:vertical;line-h
     <div class="composer">
       <textarea id="prompt" rows="2" placeholder="Describe an image to generate…">a serene mountain lake at sunrise, mist over the water</textarea>
       <div class="crow">
-        <button class="iconbtn on" id="safety" aria-label="NSFW safety filter on" title="NSFW safety filter: on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.4-3 7.6-7 9-4-1.4-7-4.6-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg></button>
+        <button class="iconbtn" id="safety" aria-label="NSFW safety filter off" title="NSFW safety filter: off"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.4-3 7.6-7 9-4-1.4-7-4.6-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg></button>
         <button class="iconbtn on" id="previewBtn" style="display:none" aria-label="Live preview on" title="Live preview: on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg></button>
         <button class="enhbtn" id="enhbtn" title="Rewrite the prompt in English with a local model"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.9 5.1L19 9l-5.1 1.9L12 16l-1.9-5.1L5 9l5.1-1.9z"/></svg>Enhance</button>
         <span style="flex:1"></span>
@@ -319,7 +319,7 @@ const prompt=$("#prompt"),gen=$("#gen"),results=$("#results"),empty=$("#empty"),
 const progress=$("#progress"),barfill=$("#barfill"),pstep=$("#pstep"),ptime=$("#ptime");
 const modelGroup=$("#modelGroup"),paramGroups=$("#paramGroups"),activeName=$("#activeName"),safetyBtn=$("#safety");
 const previewBtn=$("#previewBtn"),prevWrap=$("#prevWrap"),prevImg=$("#prevImg");
-let BACKENDS=[],CATALOG={backends:[],disk_gb:0},PV={},current="",safetyOn=true,busy=false,t0=0,timer=null,aborter=null;
+let BACKENDS=[],CATALOG={backends:[],disk_gb:0},PV={},current="",safetyOn=false,busy=false,t0=0,timer=null,aborter=null;
 let previewOn=true;try{previewOn=localStorage.getItem("alis_preview")!=="0";}catch(e){}
 let IMGSET={};   // programmatic setters for "image" params (key → set(uri)), rebuilt by renderParams — lets paste/drop feed the img2img input
 let LORAS=[];    // the LoRA library (/api/loras), shared by every model's "loras" control
@@ -375,7 +375,7 @@ document.addEventListener("keydown",e=>{if((e.metaKey||e.ctrlKey)&&e.code==="Key
   };
   if(window.pywebview)arm();else window.addEventListener("pywebviewready",arm);
 })();
-safetyBtn.addEventListener("click",()=>{safetyOn=!safetyOn;safetyBtn.classList.toggle("on",safetyOn);safetyBtn.title="NSFW safety filter: "+(safetyOn?"on":"off");});
+safetyBtn.addEventListener("click",()=>{safetyOn=!safetyOn;safetyBtn.classList.toggle("on",safetyOn);safetyBtn.title="NSFW safety filter: "+(safetyOn?"on":"off");safetyBtn.setAttribute("aria-label","NSFW safety filter "+(safetyOn?"on":"off"));});
 previewBtn.addEventListener("click",()=>{previewOn=!previewOn;previewBtn.classList.toggle("on",previewOn);previewBtn.title="Live preview: "+(previewOn?"on":"off");previewBtn.setAttribute("aria-label","Live preview "+(previewOn?"on":"off"));try{localStorage.setItem("alis_preview",previewOn?"1":"0");}catch(e){}});
 function syncPreviewBtn(){const b=backendOf(current);const show=!!(b&&b.supports_preview);previewBtn.style.display=show?"":"none";previewBtn.classList.toggle("on",previewOn);previewBtn.title="Live preview: "+(previewOn?"on":"off");}
 gen.addEventListener("click",()=>{busy?stopGen():generate();});
