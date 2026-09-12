@@ -79,6 +79,15 @@ def unrotate(w: np.ndarray, group_size: int) -> np.ndarray:
     return (w.reshape(out_dim, in_dim // group_size, group_size) @ h.T).reshape(out_dim, in_dim)
 
 
+def rotate_if_marked(name: str, w: np.ndarray, qmeta: dict) -> np.ndarray:
+    """Undo ConvRot on any layer the file's own metadata marks as rotated. Metadata keys are
+    MODULE names ("…blocks.0.attn.wq"), ours carry ".weight". Applies to the txtfusion.* blocks
+    too — missing those leaves the text-conditioning path broken (structured-but-wrong output)."""
+    entry = qmeta.get(PREFIX + name.removesuffix(".weight")) or {}
+    g = entry.get("convrot_groupsize") if entry.get("convrot") else None
+    return unrotate(w, g) if g else w
+
+
 def convert(src: str, dst: str | None = None, quiet: bool = False) -> str:
     import mlx.core as mx
 
@@ -145,18 +154,14 @@ def convert(src: str, dst: str | None = None, quiet: bool = False) -> str:
             if kind == "s":     # scales/biases ride along with their quantized weight (the "q" row)
                 continue
             if kind == "q":     # dequantize I8×row-scale, undo ConvRot, re-quantize as MLX group-64 8-bit
-                w = mx.array(tensor(name).astype(np.float32) * scale_of(name))
-                # metadata keys are MODULE names ("…attn.wq"), ours carry ".weight"
-                entry = qmeta.get(PREFIX + name.removesuffix(".weight")) or {}
-                g = entry.get("convrot_groupsize")
-                if entry.get("convrot") and g:
-                    w = mx.array(unrotate(np.asarray(w.astype(mx.float32)), g))
+                w = mx.array(rotate_if_marked(name, tensor(name).astype(np.float32) * scale_of(name), qmeta))
                 wq, gscales, gbiases = mx.quantize(w, group_size=GROUP, bits=BITS)
                 f.write(np.asarray(wq, dtype=np.uint32).tobytes())
                 f.write(bf16_bytes(np.asarray(gscales)))
                 f.write(bf16_bytes(np.asarray(gbiases)))
-            elif kind == "d":
-                f.write(bf16_bytes(tensor(name).astype(np.float32) * scale_of(name)))
+            elif kind == "d":   # non-bulk I8: same dequant + ConvRot undo, but kept in bf16
+                w = rotate_if_marked(name, tensor(name).astype(np.float32) * scale_of(name), qmeta)
+                f.write(bf16_bytes(w))
             else:
                 f.write(bf16_bytes(tensor(name)))
             if not quiet and (i + 1) % 32 == 0:
