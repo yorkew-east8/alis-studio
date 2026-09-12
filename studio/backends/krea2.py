@@ -2,14 +2,20 @@
 
 Weights are pulled from Hugging Face on first use (cached under ~/.cache/krea2_alis_mlx);
 drop a transformer_*.safetensors in the working directory to use a local copy instead.
+Users can also register arbitrary local checkpoints (fine-tunes) through the model manager —
+see studio/local_models.py; those load straight from their own path with the precision their
+file was quantized with.
 """
 
 from __future__ import annotations
 
 import os
 
+from .. import local_models
 from .base import Backend
 from .mflux_common import _img2img_args, _img2img_params, _lora_args, _lora_params
+
+_LOCAL = local_models.LOCAL_PREFIX
 
 
 class Krea2Backend(Backend):
@@ -62,19 +68,46 @@ class Krea2Backend(Backend):
     def will_load(self, variant: str) -> bool:
         return self._pipe is None or self._variant != variant   # mirrors the reload check in _get
 
+    # --- user-registered local checkpoints (studio/local_models.py) ---
+    def _local_entry(self, variant: str):
+        """The registry entry for a 'local:<name>' variant id, or None for built-in variants."""
+        return local_models.get(variant[len(_LOCAL):]) if variant.startswith(_LOCAL) else None
+
+    def extra_variants(self) -> list:
+        return [{"id": _LOCAL + e["name"], "label": e["label"],
+                 "min_ram": e.get("min_ram") or 0} for e in local_models.list_models()]
+
+    def catalog_entries(self) -> list:
+        out = list(self.catalog)
+        for e in local_models.list_models():
+            out.append({"variant": _LOCAL + e["name"], "label": e["label"],
+                        "size_gb": e.get("size_gb"), "local": True,
+                        "note": ("file missing" if e["missing"] else "local · " + e["precision"]),
+                        "installed": not e["missing"]})
+        return out
+
     def _get(self, variant: str):
         import gc
         import mlx.core as mx
         from krea2.pipeline import Krea2Pipeline, resolve_weights
 
         if self._pipe is None or self._variant != variant:
-            prec, path = resolve_weights(os.getcwd(), precision=variant, download=True)
+            entry = self._local_entry(variant)
+            if entry is not None:
+                if entry["missing"]:
+                    raise ValueError(f"The local model file is gone: {entry['path']} — restore it, "
+                                     "or delete the model here and add it again.")
+                prec, path = entry["precision"], entry["path"]
+            else:
+                prec, path = resolve_weights(os.getcwd(), precision=variant, download=True)
             # free the previous build before loading another — two 12.9B transformers won't fit
             self._pipe, self._variant = None, None
             gc.collect()
             mx.clear_cache()
             self._pipe = Krea2Pipeline(path, precision=prec, base_dir=os.environ.get("KREA2_BASE_DIR"))
-            self._variant = prec
+            # built-ins cache per precision; local checkpoints per full variant id (two fine-tunes
+            # with the same precision are still different weights)
+            self._variant = variant if entry is not None else prec
         return self._pipe
 
     def generate(self, *, prompt, variant, params, step_callback):
@@ -129,6 +162,9 @@ class Krea2Backend(Backend):
         return repo, fname, os.path.join(_CACHE, repo.replace("/", "__"), fname)
 
     def is_installed(self, variant: str) -> bool:
+        if variant.startswith(_LOCAL):
+            entry = self._local_entry(variant)
+            return bool(entry and not entry["missing"])
         _, fname, cache = self._transformer_path(variant)
         return os.path.exists(cache) or os.path.exists(os.path.join(os.getcwd(), fname))
 
@@ -151,10 +187,18 @@ class Krea2Backend(Backend):
         return specs
 
     def download(self, variant: str, progress) -> None:
+        if variant.startswith(_LOCAL):
+            raise ValueError("Local models have nothing to download — if it shows as missing, its "
+                             "file was moved or deleted; delete it here and add it again.")
         from studio.download import download_files
         download_files(self._specs(variant), progress)
 
     def delete(self, variant: str) -> None:
+        if variant.startswith(_LOCAL):
+            local_models.remove(variant[len(_LOCAL):])   # unregisters only — never deletes the file
+            if self._variant == variant:                 # drop the loaded build if we just removed it
+                self._pipe, self._variant = None, None
+            return
         _, _, cache = self._transformer_path(variant)
         if os.path.exists(cache):
             os.remove(cache)

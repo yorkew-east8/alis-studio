@@ -208,6 +208,13 @@ textarea.fld{height:auto;min-height:54px;padding:8px 10px;resize:vertical;line-h
 .mprt{min-width:0;flex:1;line-height:1.25}
 .mprn{display:block;font-size:13px;color:var(--text)}
 .mprs{display:block;font-size:11px;color:var(--muted);font-family:var(--mono)}
+.mpr.off{opacity:.55}
+.mpadd{display:flex;gap:6px;padding:7px 9px 5px;border-top:1px solid var(--border);margin-top:5px}
+.mpadd input{flex:1;min-width:0;font-size:12px;font-family:var(--mono);padding:5px 8px;border-radius:7px;border:1px solid var(--border);background:var(--surface-1);color:var(--text)}
+.mpadd input::placeholder{color:var(--muted)}
+.mpaddbtn{flex:none;font-size:12px;padding:5px 11px;border-radius:7px;border:1px solid var(--border);background:var(--surface-1);color:var(--text)}
+.mpaddbtn:hover{background:var(--surface-2)}
+.mpaddbtn:disabled{opacity:.6}
 .mpra{display:inline-flex;align-items:center;gap:7px;color:var(--text-2);flex:none}.mpra svg{width:16px;height:16px}.mpra .ok{color:var(--clay);display:inline-flex}
 .mpdel{display:inline-flex;color:var(--muted);cursor:pointer}.mpdel:hover{color:var(--text)}.mpdel svg{width:15px;height:15px}
 .mprog{height:4px;border-radius:2px;background:var(--surface-1);overflow:hidden;margin-top:8px;flex-basis:100%}.mprog i{display:block;height:100%;width:0;background:var(--clay);border-radius:2px;transition:width .3s}
@@ -817,7 +824,8 @@ function allBuilds(){
   const out=[];
   BACKENDS.forEach(b=>b.variants.forEach(v=>{const c=cat[b.id+":"+v.id];
     out.push({backend:b.id,blabel:b.label,variant:v.id,label:v.label,min_ram:v.min_ram||b.min_ram_gib||0,
-      installed:c?!!c.installed:true,downloadable:!!c,size_gb:c?c.size_gb:null,note:c?c.note:(b.info||null)});}));
+      installed:c?!!c.installed:true,downloadable:!!c,size_gb:c?c.size_gb:null,note:c?c.note:(b.info||null),
+      local:!!(c&&c.local)});}));
   return out;
 }
 const buildOf=model=>allBuilds().find(b=>b.backend+":"+b.variant===model);
@@ -863,6 +871,7 @@ function renderModelGroup(){
     const gl=el("div","mpg",grp[0].blabel);
     if(bid===SYS.recommended)gl.appendChild(el("span","mprec","★ Recommended"));   // best fit for this Mac's RAM
     pop.appendChild(gl);grp.forEach(b=>pop.appendChild(popRow(b)));
+    if(bid==="krea2-turbo")pop.appendChild(addLocalRow());   // user-registered local checkpoints
   });
   btn.onclick=e=>{e.stopPropagation();POPEN=!POPEN;pop.classList.toggle("open",POPEN);btn.setAttribute("aria-expanded",POPEN?"true":"false");};
   wrap.appendChild(btn);wrap.appendChild(pop);modelGroup.appendChild(wrap);
@@ -877,16 +886,20 @@ function renderModelGroup(){
 
 function popRow(b){
   const id=b.backend+":"+b.variant,active=(id===current);
-  const r=el("div","mpr"+(active?" on":""));
+  const r=el("div","mpr"+(active?" on":"")+(b.local&&!b.installed?" off":""));
   const sub=b.downloadable?((b.size_gb?b.size_gb+" GB":"")+(b.note?" · "+b.note:"")):(b.note||"");
   r.innerHTML='<span class="mpri">'+SVG_CUBE+'</span><span class="mprt"><span class="mprn">'+b.label+'</span>'+(sub?'<span class="mprs">'+sub+'</span>':'')+'</span>';
   const act=el("span","mpra");
   if(active)act.innerHTML='<span class="ok">'+SVG_CHECK+'</span>';
-  else if(b.downloadable&&!b.installed)act.innerHTML=SVG_DLI;
-  if(b.downloadable&&b.installed){const d=el("span","mpdel",SVG_TRASH);d.title="Delete "+b.label;d.setAttribute("aria-label","Delete "+b.label);d.onclick=e=>{e.stopPropagation();delVariant(b);};act.appendChild(d);}
+  else if(b.downloadable&&!b.installed&&!b.local)act.innerHTML=SVG_DLI;
+  if(b.downloadable&&b.installed||b.local){const d=el("span","mpdel",SVG_TRASH);d.title="Remove "+b.label+(b.local?" (keeps the file)":"");d.setAttribute("aria-label","Delete "+b.label);d.onclick=e=>{e.stopPropagation();delVariant(b);};act.appendChild(d);}
   r.appendChild(act);
   r.setAttribute("aria-label",b.blabel+" · "+b.label);
-  r.onclick=()=>{if(b.downloadable&&!b.installed)dlVariant(b,r,act);else{POPEN=false;setActive(id);}};
+  r.onclick=()=>{
+    if(b.local&&!b.installed){showErr("The model file has moved or been deleted ("+b.note+"). Restore it or remove the model here and add it again.");return;}
+    if(b.downloadable&&!b.installed)dlVariant(b,r,act);
+    else{POPEN=false;setActive(id);}
+  };
   return r;
 }
 
@@ -912,6 +925,31 @@ async function delVariant(b){
   await refreshCatalog();
 }
 async function refreshCatalog(){try{CATALOG=await(await fetch("/api/catalog")).json();}catch(e){}renderModelGroup();reconcile();}
+async function refreshModels(){try{BACKENDS=(await(await fetch("/api/models")).json()).backends;}catch(e){}}
+
+function addLocalRow(){   // register a local .safetensors checkpoint (Krea 2 fine-tunes); config is a
+  const row=el("div","mpadd");   // same-named .json next to the file — precision is inferred if absent
+  const inp=el("input");inp.type="text";inp.placeholder="/path/to/model.safetensors";
+  inp.setAttribute("aria-label","Path to a local .safetensors model");
+  const btn=el("button","mpaddbtn","Add");
+  btn.onclick=async e=>{
+    e.stopPropagation();
+    const p=inp.value.trim();if(!p)return;
+    btn.disabled=true;btn.textContent="…";
+    try{
+      const r=await fetch("/api/localmodels/add",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({path:p})});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok||(d.ok===false))throw new Error(d.error||("server "+r.status));
+      inp.value="";
+      await refreshModels();await refreshCatalog();
+      if(d.entry){POPEN=false;setActive("krea2-turbo:local:"+d.entry.name);}
+    }catch(err){showErr("Add failed: "+err.message);}
+    finally{btn.disabled=false;btn.textContent="Add";}
+  };
+  inp.onclick=e=>e.stopPropagation();
+  row.appendChild(inp);row.appendChild(btn);
+  return row;
+}
 
 function renderParams(b,preset){   // preset: saved params from a gallery item ("Restore settings")
   paramGroups.innerHTML="";PV={};IMGSET={};

@@ -17,7 +17,7 @@ import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import __version__
+from . import __version__, local_models
 from .registry import Registry
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -231,7 +231,7 @@ def _catalog() -> dict:
     backs = []
     for b in _registry().backends.values():
         entries = [{**c, "backend": b.id, "installed": b.is_installed(c["variant"])}
-                   for c in getattr(b, "catalog", [])]
+                   for c in b.catalog_entries()]
         if entries:
             backs.append({"id": b.id, "label": b.label, "entries": entries})
     try:
@@ -525,7 +525,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, "application/json", b'{"ok":true}')
             return
         if self.path not in ("/api/generate", "/api/upscale", "/api/download", "/api/delete", "/api/enhance",
-                             "/api/gallery/delete", "/api/loras/add", "/api/loras/delete"):
+                             "/api/gallery/delete", "/api/loras/add", "/api/loras/delete",
+                             "/api/localmodels/add"):
             self._send(404, "text/plain", b"not found")
             return
         try:
@@ -554,6 +555,12 @@ class Handler(BaseHTTPRequestHandler):
                 except OSError:
                     pass
             self._send(200, "application/json", json.dumps({"ok": True, "items": _lora_list()}).encode())
+        elif self.path == "/api/localmodels/add":
+            try:
+                entry = local_models.add(str(req.get("path", "")))
+                self._send(200, "application/json", json.dumps({"ok": True, "entry": entry}).encode())
+            except ValueError as e:
+                self._send(200, "application/json", json.dumps({"ok": False, "error": str(e)}).encode())
         elif self.path == "/api/upscale":
             self._upscale(req)
         elif self.path == "/api/enhance":

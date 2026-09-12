@@ -37,19 +37,30 @@ class Backend:
         skipped at registration so the app still runs with whatever is installed."""
         return True
 
+    def extra_variants(self) -> list[dict]:
+        """Runtime-added selectable builds (user-registered local checkpoints), merged after the
+        class-level `variants` in meta(). Each dict: {"id", "label", "min_ram"?}."""
+        return []
+
     def meta(self) -> dict:
         return {"id": self.id, "label": self.label, "info": self.info,
-                "prompt_note": self.prompt_note, "variants": self.variants, "params": self.params,
+                "prompt_note": self.prompt_note, "variants": self.variants + self.extra_variants(),
+                "params": self.params,
                 "min_ram_gib": self.min_ram_gib, "supports_preview": self.supports_preview}
 
     def min_ram_for(self, variant: str) -> int:
         """RAM floor (GiB) for a specific build. Defaults to the backend-wide min_ram_gib, but a
         variant may override it (e.g. a bf16 build needs far more than the 8-bit one) by carrying a
         "min_ram" key in its `variants` entry. Drives the UI warning and the server-side gate."""
-        for v in self.variants:
+        for v in self.variants + self.extra_variants():
             if v.get("id") == variant and v.get("min_ram"):
                 return int(v["min_ram"])
         return self.min_ram_gib
+
+    def catalog_entries(self) -> list[dict]:
+        """Builds shown in the model manager (/api/catalog). Static by default; backends with
+        runtime-added builds extend it."""
+        return self.catalog
 
     def generate(self, *, prompt: str, variant: str, params: dict, step_callback):
         """Return a list of PIL.Image. `params` carries the resolved settings (width, height,
