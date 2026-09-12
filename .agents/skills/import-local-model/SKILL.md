@@ -91,11 +91,17 @@ EOF
 
 ## 第三步：注册进模型列表
 
+**先把模型文件放到固定位置再注册**——推荐 `~/models/`。模型是原地引用的，注册表里记录的就是
+这个路径；不要把文件留在 `~/Downloads/` 注册（清理工具容易扫走它，之后就是"文件缺失"）。
+如果文件已在 Downloads：先 `mv` 到 `~/models/`，再注册新路径。文件日后挪动后同样要
+删除旧条目、按新路径重新注册。
+
 ```bash
+mkdir -p ~/models && cp /path/to/model.mlx8bit.safetensors ~/models/   # 转换产物放进固定目录
 venv/bin/python -c "
 import sys; sys.path.insert(0, '.')
 from studio import local_models as lm
-print(lm.add('<文件路径>'))   # 读同名旁车 json（可选 {precision,label,min_ram}），自动推断精度
+print(lm.add('/Users/$USER/models/<文件名>.safetensors'))   # 读同名旁车 json（可选 {precision,label,min_ram}），自动推断精度
 "
 ```
 
@@ -112,6 +118,9 @@ print(lm.add('<文件路径>'))   # 读同名旁车 json（可选 {precision,lab
 
 ## 注意
 
+- **模型文件的常驻位置是 `~/models/`**：注册引用的是绝对路径，文件挪走/被清理 = 模型缺失。
+  转换完成后把产物从 Downloads 移入 `~/models/` 再注册；原始下载文件（int8_convrot 源）转换
+  验证通过后可以删除，需要时再从 Civitai 重新下载。
 - 8-bit 模型 ~14 GB，RAM 门槛 24 GB；用户 Mac 内存不足时提醒换小模型或调低分辨率
 - 想覆盖推断结果/改显示名：在模型文件旁放同名 `.json`（如 `{"precision": "8bit", "label": "My Mix"}`）
 - 精度推断失败时报错并停止，不要瞎猜
