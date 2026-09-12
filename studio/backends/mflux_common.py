@@ -278,3 +278,14 @@ def _construct_checking_lora(builder, lora_paths):
                              "made for a different base model. Uncheck it, or switch to the model it "
                              "was trained for.")
     return model
+
+
+def _hf_downloaded(repos) -> bool:
+    """True when every listed HF repo has a snapshot in the local hub cache — the honest
+    'weights are on disk' signal for the catalog-less (first-use-download) mflux models."""
+    try:
+        from huggingface_hub import scan_cache_dir
+        cached = {r.repo_id for r in scan_cache_dir().repos}
+    except Exception:
+        return False
+    return all(r in cached for r in repos)

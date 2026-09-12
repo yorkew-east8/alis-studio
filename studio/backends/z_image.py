@@ -18,7 +18,8 @@ from __future__ import annotations
 import os
 
 from .base import Backend
-from .mflux_common import (_apply_memory_policy, _construct_checking_lora, _img2img_args,
+from .mflux_common import (_apply_memory_policy, _construct_checking_lora, _hf_downloaded,
+                           _img2img_args,
                            _img2img_params, _lora_args, _lora_params, _lora_sig, _wire_progress)
 
 class ZImageTurboBackend(Backend):
@@ -126,6 +127,15 @@ class ZImageTurboBackend(Backend):
         # a LoRA-set change also reloads, but that happens inside generate (params aren't available
         # here); it's a seconds-long fuse, not a download — no loading banner needed
         return self._model is None or self._variant != variant
+
+    def is_downloaded(self, variant):
+        from mflux.models.common.config import ModelConfig
+        mp = self.BUILDS.get(variant, (None, None))[0]
+        if mp and "/" in mp and not os.path.exists(mp):
+            repos = [mp]   # pre-quant repos are self-contained (transformer + vae + text encoder)
+        else:
+            repos = [ModelConfig.z_image_turbo().model_name]   # 8-bit/bf16 quantize from the official repo
+        return _hf_downloaded(repos)
 
     def generate(self, *, prompt, variant, params, step_callback):
         model = self._get(variant, params)

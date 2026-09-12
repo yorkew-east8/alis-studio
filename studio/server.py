@@ -230,8 +230,15 @@ def _system() -> dict:
 def _catalog() -> dict:
     backs = []
     for b in _registry().backends.values():
-        entries = [{**c, "backend": b.id, "installed": b.is_installed(c["variant"])}
+        entries = [{**c, "backend": b.id, "installed": b.is_installed(c["variant"]),
+                    "downloaded": b.is_downloaded(c["variant"])}
                    for c in b.catalog_entries()]
+        if not entries:
+            # catalog-less backends (mflux models: auto-download on first use, no managed builds)
+            # still get entries so the UI can show the honest per-variant downloaded state
+            entries = [{"variant": v["id"], "label": v["label"], "backend": b.id, "managed": True,
+                        "installed": b.is_installed(v["id"]), "downloaded": b.is_downloaded(v["id"])}
+                       for v in b.variants + b.extra_variants()]
         if entries:
             backs.append({"id": b.id, "label": b.label, "entries": entries})
     try:

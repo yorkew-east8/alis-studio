@@ -14,7 +14,7 @@ deliberately not exposed. 8-bit peaks ~39 GB, so this backend needs a roomy Mac 
 from __future__ import annotations
 
 from .base import Backend
-from .mflux_common import (_apply_memory_policy, _construct_checking_lora, _lora_args,
+from .mflux_common import (_apply_memory_policy, _construct_checking_lora, _hf_downloaded, _lora_args,
                            _lora_params, _lora_sig, _wire_progress)
 
 _QUANT = {"8bit": 8, "bf16": None}
@@ -59,6 +59,10 @@ class QwenImageEditBackend(Backend):
 
     def will_load(self, variant):
         return self._model is None or self._variant != variant
+
+    def is_downloaded(self, variant):
+        from mflux.models.common.config import ModelConfig
+        return _hf_downloaded([ModelConfig.qwen_image_edit().model_name])
 
     def _get(self, variant, params=None):
         import gc

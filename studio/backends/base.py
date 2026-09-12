@@ -80,6 +80,12 @@ class Backend:
     def is_installed(self, variant: str) -> bool:
         return True
 
+    def is_downloaded(self, variant: str) -> bool:
+        """Weights for this variant are fully on disk (drives the picker's filled-cube icon).
+        Defaults to is_installed(); backends that auto-download on first use override it with a
+        real cache check — they stay installed=True (always generable) while reporting honestly."""
+        return self.is_installed(variant)
+
     def download(self, variant: str, progress) -> None:
         """Download `variant`'s weights, calling progress(done_bytes, total_bytes) as it goes."""
         raise NotImplementedError

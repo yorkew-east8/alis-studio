@@ -9,8 +9,9 @@ by contrast, ships explicit download management (it uses our own HTTP-bridge dow
 from __future__ import annotations
 
 from .base import Backend
-from .mflux_common import (_apply_memory_policy, _construct_checking_lora, _img2img_args,
-                           _img2img_params, _lora_args, _lora_params, _lora_sig, _wire_progress)
+from .mflux_common import (_apply_memory_policy, _construct_checking_lora, _hf_downloaded,
+                           _img2img_args, _img2img_params, _lora_args, _lora_params, _lora_sig,
+                           _wire_progress)
 
 _QUANT = {"8bit": 8, "4bit": 4, "bf16": None}
 
@@ -91,6 +92,9 @@ class _MfluxFlux(Backend):
 
     def will_load(self, variant):
         return self._model is None or self._variant != variant
+
+    def is_downloaded(self, variant):
+        return _hf_downloaded([self.repo])
 
     def generate(self, *, prompt, variant, params, step_callback):
         model = self._get(variant, params)
@@ -179,6 +183,10 @@ class QwenImageBackend(Backend):
 
     def will_load(self, variant):
         return self._model is None or self._variant != variant
+
+    def is_downloaded(self, variant):
+        from mflux.models.common.config import ModelConfig
+        return _hf_downloaded([ModelConfig.qwen_image().model_name])
 
     def generate(self, *, prompt, variant, params, step_callback):
         model = self._get(variant, params)

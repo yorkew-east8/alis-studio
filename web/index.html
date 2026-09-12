@@ -827,7 +827,8 @@ function allBuilds(){
   const out=[];
   BACKENDS.forEach(b=>b.variants.forEach(v=>{const c=cat[b.id+":"+v.id];
     out.push({backend:b.id,blabel:b.label,variant:v.id,label:v.label,min_ram:v.min_ram||b.min_ram_gib||0,
-      installed:c?!!c.installed:true,downloadable:!!c,size_gb:c?c.size_gb:null,note:c?c.note:(b.info||null),
+      installed:c?!!c.installed:true,downloaded:c?!!(c.downloaded??c.installed):true,
+      downloadable:!!(c&&!c.managed),size_gb:c?c.size_gb:null,note:c?c.note:(b.info||null),
       local:!!(c&&c.local)});}));
   return out;
 }
@@ -865,7 +866,7 @@ function renderModelGroup(){
   modelGroup.innerHTML="";
   const head=el("div","sgrp","Model");head.appendChild(el("span","disk",(CATALOG.disk_gb||0)+" GB"));modelGroup.appendChild(head);
   const wrap=el("div","picker"),cur=buildOf(current);
-  const btn=el("button","mpick",'<span class="mpico'+(cur&&cur.installed?' ok':'')+'">'+(cur&&cur.installed?SVG_CUBE_F:SVG_CUBE)+'</span><span class="mptxt"><span class="mpn">'+(cur?cur.blabel:"Select a model")+'</span><span class="mpv">'+(cur?cur.label:"")+'</span></span><span class="mpchev">'+SVG_CHEVD+'</span>');
+  const btn=el("button","mpick",'<span class="mpico'+(cur&&cur.downloaded?' ok':'')+'">'+(cur&&cur.downloaded?SVG_CUBE_F:SVG_CUBE)+'</span><span class="mptxt"><span class="mpn">'+(cur?cur.blabel:"Select a model")+'</span><span class="mpv">'+(cur?cur.label:"")+'</span></span><span class="mpchev">'+SVG_CHEVD+'</span>');
   btn.setAttribute("aria-label","Choose model");btn.setAttribute("aria-expanded",POPEN?"true":"false");
   const pop=el("div","mpop"+(POPEN?" open":""));
   const builds=allBuilds(),byB={};
@@ -891,7 +892,7 @@ function popRow(b){
   const id=b.backend+":"+b.variant,active=(id===current);
   const r=el("div","mpr"+(active?" on":"")+(b.local&&!b.installed?" off":""));
   const sub=b.downloadable?((b.size_gb?b.size_gb+" GB":"")+(b.note?" · "+b.note:"")):(b.note||"");
-  r.innerHTML='<span class="mpri'+(b.installed?' ok':'')+'">'+(b.installed?SVG_CUBE_F:SVG_CUBE)+'</span><span class="mprt"><span class="mprn">'+b.label+'</span>'+(sub?'<span class="mprs">'+sub+'</span>':'')+'</span>';
+  r.innerHTML='<span class="mpri'+(b.downloaded?' ok':'')+'">'+(b.downloaded?SVG_CUBE_F:SVG_CUBE)+'</span><span class="mprt"><span class="mprn">'+b.label+'</span>'+(sub?'<span class="mprs">'+sub+'</span>':'')+'</span>';
   const act=el("span","mpra");
   if(active)act.innerHTML='<span class="ok">'+SVG_CHECK+'</span>';
   else if(b.downloadable&&!b.installed&&!b.local)act.innerHTML=SVG_DLI;
