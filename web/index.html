@@ -194,7 +194,7 @@ textarea.fld{height:auto;min-height:54px;padding:8px 10px;resize:vertical;line-h
 .mpico{width:28px;height:28px;border-radius:7px;background:var(--surface-1);display:flex;align-items:center;justify-content:center;color:var(--text-2);flex:none}.mpico svg{width:16px;height:16px}
 .mptxt{min-width:0;flex:1;text-align:left;line-height:1.25}
 .mpn{display:block;font-size:13px;font-weight:500}
-.mpv{display:block;font-size:11px;color:var(--muted);font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mpv{display:block;font-size:11px;color:var(--muted);font-family:var(--mono);overflow-wrap:anywhere;line-height:1.3}
 .mpchev{color:var(--muted);display:inline-flex;flex:none}.mpchev svg{width:17px;height:17px}
 .mpop{display:none;position:absolute;top:calc(100% + 5px);left:0;right:0;z-index:30;max-height:330px;overflow:auto;background:var(--surface-2);border:0.5px solid var(--border-strong);border-radius:12px;padding:5px;box-shadow:0 10px 30px rgba(20,18,16,.18)}
 .mpop.open{display:block}
@@ -206,7 +206,7 @@ textarea.fld{height:auto;min-height:54px;padding:8px 10px;resize:vertical;line-h
 .mpr.on{background:rgba(196,98,63,.10)}
 .mpri{width:26px;height:26px;border-radius:6px;background:var(--surface-1);display:flex;align-items:center;justify-content:center;color:var(--text-2);flex:none}.mpri svg{width:15px;height:15px}
 .mprt{min-width:0;flex:1;line-height:1.25}
-.mprn{display:block;font-size:13px;color:var(--text)}
+.mprn{display:block;font-size:13px;color:var(--text);overflow-wrap:anywhere;line-height:1.3}
 .mprs{display:block;font-size:11px;color:var(--muted);font-family:var(--mono)}
 .mpr.off{opacity:.55}
 .mpadd{display:flex;gap:6px;padding:7px 9px 5px;border-top:1px solid var(--border);margin-top:5px}
@@ -336,6 +336,7 @@ let AUTOSEED=false;try{AUTOSEED=localStorage.getItem("alis_autoseed")==="1";}cat
 let SYS={ram_gib:0,constrained:false,enhance_available:false,enhance_model:""},enhanceOn=false,galleryOn=false;
 const SVG_DL='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>';
 const SVG_CUBE='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l9 5v10l-9 5-9-5V7z"/><path d="M3 7l9 5 9-5M12 12v10"/></svg>';
+const SVG_CUBE_F='<svg viewBox="0 0 24 24" fill="currentColor" fill-opacity=".3" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l9 5v10l-9 5-9-5V7z"/><path d="M3 7l9 5 9-5M12 12v10"/></svg>';
 const SVG_CHECK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>';
 const SVG_DLI='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>';
 const SVG_TRASH='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>';
@@ -862,7 +863,7 @@ function renderModelGroup(){
   modelGroup.innerHTML="";
   const head=el("div","sgrp","Model");head.appendChild(el("span","disk",(CATALOG.disk_gb||0)+" GB"));modelGroup.appendChild(head);
   const wrap=el("div","picker"),cur=buildOf(current);
-  const btn=el("button","mpick",'<span class="mpico">'+SVG_CUBE+'</span><span class="mptxt"><span class="mpn">'+(cur?cur.blabel:"Select a model")+'</span><span class="mpv">'+(cur?cur.label:"")+'</span></span><span class="mpchev">'+SVG_CHEVD+'</span>');
+  const btn=el("button","mpick",'<span class="mpico">'+(cur&&cur.installed?SVG_CUBE_F:SVG_CUBE)+'</span><span class="mptxt"><span class="mpn">'+(cur?cur.blabel:"Select a model")+'</span><span class="mpv">'+(cur?cur.label:"")+'</span></span><span class="mpchev">'+SVG_CHEVD+'</span>');
   btn.setAttribute("aria-label","Choose model");btn.setAttribute("aria-expanded",POPEN?"true":"false");
   const pop=el("div","mpop"+(POPEN?" open":""));
   const builds=allBuilds(),byB={};
@@ -888,7 +889,7 @@ function popRow(b){
   const id=b.backend+":"+b.variant,active=(id===current);
   const r=el("div","mpr"+(active?" on":"")+(b.local&&!b.installed?" off":""));
   const sub=b.downloadable?((b.size_gb?b.size_gb+" GB":"")+(b.note?" · "+b.note:"")):(b.note||"");
-  r.innerHTML='<span class="mpri">'+SVG_CUBE+'</span><span class="mprt"><span class="mprn">'+b.label+'</span>'+(sub?'<span class="mprs">'+sub+'</span>':'')+'</span>';
+  r.innerHTML='<span class="mpri">'+(b.installed?SVG_CUBE_F:SVG_CUBE)+'</span><span class="mprt"><span class="mprn">'+b.label+'</span>'+(sub?'<span class="mprs">'+sub+'</span>':'')+'</span>';
   const act=el("span","mpra");
   if(active)act.innerHTML='<span class="ok">'+SVG_CHECK+'</span>';
   else if(b.downloadable&&!b.installed&&!b.local)act.innerHTML=SVG_DLI;
