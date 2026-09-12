@@ -205,6 +205,7 @@ textarea.fld{height:auto;min-height:54px;padding:8px 10px;resize:vertical;line-h
 .mpr:hover{background:var(--surface-1)}
 .mpr.on{background:rgba(196,98,63,.10)}
 .mpri{width:26px;height:26px;border-radius:6px;background:var(--surface-1);display:flex;align-items:center;justify-content:center;color:var(--text-2);flex:none}.mpri svg{width:15px;height:15px}
+.mpri.ok{color:var(--clay)}
 .mprt{min-width:0;flex:1;line-height:1.25}
 .mprn{display:block;font-size:13px;color:var(--text);overflow-wrap:anywhere;line-height:1.3}
 .mprs{display:block;font-size:11px;color:var(--muted);font-family:var(--mono)}
@@ -216,6 +217,7 @@ textarea.fld{height:auto;min-height:54px;padding:8px 10px;resize:vertical;line-h
 .mpaddbtn:hover{background:var(--surface-2)}
 .mpaddbtn:disabled{opacity:.6}
 .mpra{display:inline-flex;align-items:center;gap:7px;color:var(--text-2);flex:none}.mpra svg{width:16px;height:16px}.mpra .ok{color:var(--clay);display:inline-flex}
+.mpico{display:flex;color:var(--text-2)}.mpico.ok{color:var(--clay)}
 .mpdel{display:inline-flex;color:var(--muted);cursor:pointer}.mpdel:hover{color:var(--text)}.mpdel svg{width:15px;height:15px}
 .mprog{height:4px;border-radius:2px;background:var(--surface-1);overflow:hidden;margin-top:8px;flex-basis:100%}.mprog i{display:block;height:100%;width:0;background:var(--clay);border-radius:2px;transition:width .3s}
 .progress{display:none;margin:8px 0 2px}.progress.show{display:block}
@@ -863,7 +865,7 @@ function renderModelGroup(){
   modelGroup.innerHTML="";
   const head=el("div","sgrp","Model");head.appendChild(el("span","disk",(CATALOG.disk_gb||0)+" GB"));modelGroup.appendChild(head);
   const wrap=el("div","picker"),cur=buildOf(current);
-  const btn=el("button","mpick",'<span class="mpico">'+(cur&&cur.installed?SVG_CUBE_F:SVG_CUBE)+'</span><span class="mptxt"><span class="mpn">'+(cur?cur.blabel:"Select a model")+'</span><span class="mpv">'+(cur?cur.label:"")+'</span></span><span class="mpchev">'+SVG_CHEVD+'</span>');
+  const btn=el("button","mpick",'<span class="mpico'+(cur&&cur.installed?' ok':'')+'">'+(cur&&cur.installed?SVG_CUBE_F:SVG_CUBE)+'</span><span class="mptxt"><span class="mpn">'+(cur?cur.blabel:"Select a model")+'</span><span class="mpv">'+(cur?cur.label:"")+'</span></span><span class="mpchev">'+SVG_CHEVD+'</span>');
   btn.setAttribute("aria-label","Choose model");btn.setAttribute("aria-expanded",POPEN?"true":"false");
   const pop=el("div","mpop"+(POPEN?" open":""));
   const builds=allBuilds(),byB={};
@@ -889,7 +891,7 @@ function popRow(b){
   const id=b.backend+":"+b.variant,active=(id===current);
   const r=el("div","mpr"+(active?" on":"")+(b.local&&!b.installed?" off":""));
   const sub=b.downloadable?((b.size_gb?b.size_gb+" GB":"")+(b.note?" · "+b.note:"")):(b.note||"");
-  r.innerHTML='<span class="mpri">'+(b.installed?SVG_CUBE_F:SVG_CUBE)+'</span><span class="mprt"><span class="mprn">'+b.label+'</span>'+(sub?'<span class="mprs">'+sub+'</span>':'')+'</span>';
+  r.innerHTML='<span class="mpri'+(b.installed?' ok':'')+'">'+(b.installed?SVG_CUBE_F:SVG_CUBE)+'</span><span class="mprt"><span class="mprn">'+b.label+'</span>'+(sub?'<span class="mprs">'+sub+'</span>':'')+'</span>';
   const act=el("span","mpra");
   if(active)act.innerHTML='<span class="ok">'+SVG_CHECK+'</span>';
   else if(b.downloadable&&!b.installed&&!b.local)act.innerHTML=SVG_DLI;
