@@ -135,7 +135,8 @@ class ZImageTurboBackend(Backend):
             repos = [mp]   # pre-quant repos are self-contained (transformer + vae + text encoder)
         else:
             repos = [ModelConfig.z_image_turbo().model_name]   # 8-bit/bf16 quantize from the official repo
-        return _hf_downloaded(repos)
+        from mflux.models.z_image.weights.z_image_weight_definition import ZImageWeightDefinition
+        return _hf_downloaded(repos, ZImageWeightDefinition.get_download_patterns())
 
     def generate(self, *, prompt, variant, params, step_callback):
         model = self._get(variant, params)

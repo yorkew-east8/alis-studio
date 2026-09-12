@@ -96,7 +96,9 @@ class ErnieImageTurboBackend(Backend):
 
     def is_downloaded(self, variant):
         from mflux.models.common.config import ModelConfig
-        return _hf_downloaded([ModelConfig.ernie_image_turbo().model_name])
+        from mflux.models.ernie_image.weights.ernie_weight_definition import ErnieWeightDefinition
+        return _hf_downloaded([ModelConfig.ernie_image_turbo().model_name],
+                              ErnieWeightDefinition.get_download_patterns())
 
     def generate(self, *, prompt, variant, params, step_callback):
         model = self._get(variant, params)

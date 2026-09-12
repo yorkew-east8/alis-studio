@@ -62,7 +62,9 @@ class QwenImageEditBackend(Backend):
 
     def is_downloaded(self, variant):
         from mflux.models.common.config import ModelConfig
-        return _hf_downloaded([ModelConfig.qwen_image_edit().model_name])
+        from mflux.models.qwen.weights.qwen_weight_definition import QwenWeightDefinition
+        return _hf_downloaded([ModelConfig.qwen_image_edit().model_name],
+                              QwenWeightDefinition.get_download_patterns())
 
     def _get(self, variant, params=None):
         import gc

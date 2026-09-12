@@ -94,7 +94,8 @@ class _MfluxFlux(Backend):
         return self._model is None or self._variant != variant
 
     def is_downloaded(self, variant):
-        return _hf_downloaded([self.repo])
+        from mflux.models.flux.weights.flux_weight_definition import FluxWeightDefinition
+        return _hf_downloaded([self.repo], FluxWeightDefinition.get_download_patterns())
 
     def generate(self, *, prompt, variant, params, step_callback):
         model = self._get(variant, params)
@@ -186,7 +187,9 @@ class QwenImageBackend(Backend):
 
     def is_downloaded(self, variant):
         from mflux.models.common.config import ModelConfig
-        return _hf_downloaded([ModelConfig.qwen_image().model_name])
+        from mflux.models.qwen.weights.qwen_weight_definition import QwenWeightDefinition
+        return _hf_downloaded([ModelConfig.qwen_image().model_name],
+                              QwenWeightDefinition.get_download_patterns())
 
     def generate(self, *, prompt, variant, params, step_callback):
         model = self._get(variant, params)

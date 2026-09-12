@@ -63,7 +63,9 @@ class Flux2KleinBackend(Backend):
 
     def is_downloaded(self, variant):
         from mflux.models.common.config import ModelConfig
-        return _hf_downloaded([ModelConfig.flux2_klein_4b().model_name])
+        from mflux.models.flux2.weights.flux2_weight_definition import Flux2KleinWeightDefinition
+        return _hf_downloaded([ModelConfig.flux2_klein_4b().model_name],
+                              Flux2KleinWeightDefinition.get_download_patterns())
 
     def _get(self, variant, params=None):
         import gc

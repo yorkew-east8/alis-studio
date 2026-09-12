@@ -280,12 +280,62 @@ def _construct_checking_lora(builder, lora_paths):
     return model
 
 
-def _hf_downloaded(repos) -> bool:
-    """True when every listed HF repo has a snapshot in the local hub cache — the honest
-    'weights are on disk' signal for the catalog-less (first-use-download) mflux models."""
+def _hf_downloaded(repos, patterns) -> bool:
+    """True when every listed HF repo has, in some local snapshot, files matching every one of
+    `patterns` (a mflux WeightDefinition.get_download_patterns() list; sharded safetensors are
+    resolved via their index file). 'The repo dir exists' is NOT enough — a half-finished
+    download (config/tokenizer present, the multi-GB transformer still streaming) looks
+    identical to a complete one and would light up the picker wrongly."""
+    import fnmatch
+    import json
+    import os
     try:
         from huggingface_hub import scan_cache_dir
-        cached = {r.repo_id for r in scan_cache_dir().repos}
+        cached = {r.repo_id: r.repo_path for r in scan_cache_dir().repos}
     except Exception:
         return False
-    return all(r in cached for r in repos)
+    for repo in repos:
+        repo_dir = cached.get(repo)
+        if not repo_dir:
+            return False
+        snaps = os.path.join(repo_dir, "snapshots")
+        if not os.path.isdir(snaps):
+            return False
+        found = False
+        for snap_name in os.listdir(snaps):
+            snap = os.path.join(snaps, snap_name)
+            if not os.path.isdir(snap):
+                continue
+            files = set()
+            for root, _, names in os.walk(snap):
+                for n in names:
+                    p = os.path.join(root, n)
+                    if os.path.exists(p):   # dangling symlinks from dead downloads don't count
+                        files.add(os.path.relpath(p, snap))
+            ok = True
+            for pat in patterns:
+                hits = [f for f in files if fnmatch.fnmatch(f, pat)]
+                if not hits:
+                    ok = False
+                    break
+                for f in hits:              # a sharded index commits us to every shard it lists
+                    if not f.endswith(".index.json"):
+                        continue
+                    try:
+                        with open(os.path.join(snap, f)) as fh:
+                            shards = set(json.load(fh)["weight_map"].values())
+                    except Exception:
+                        ok = False
+                        break
+                    base = os.path.dirname(f)
+                    if not {os.path.join(base, s) if base else s for s in shards} <= files:
+                        ok = False
+                        break
+                if not ok:
+                    break
+            if ok:
+                found = True
+                break
+        if not found:
+            return False
+    return True
