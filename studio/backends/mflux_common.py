@@ -314,7 +314,10 @@ def _hf_downloaded(repos, patterns) -> bool:
                         files.add(os.path.relpath(p, snap))
             ok = True
             for pat in patterns:
-                hits = [f for f in files if fnmatch.fnmatch(f, pat)]
+                # a root-level pattern ("added_tokens.json") may land in a subdirectory of the
+                # snapshot (tokenizer/** fetches it) — fall back to basename matching
+                hits = [f for f in files if fnmatch.fnmatch(f, pat)
+                        or ("/" not in pat and os.path.basename(f) == pat)]
                 if not hits:
                     ok = False
                     break
