@@ -92,7 +92,6 @@ input[type=range]{width:100%;accent-color:var(--clay)}
 .lrscale{flex:1;accent-color:var(--clay);min-width:50px}
 .lrvo{font-size:11px;color:var(--muted);width:26px;text-align:right}
 .lrdel{border:none;background:transparent;color:var(--muted);cursor:pointer;display:inline-flex;padding:2px}.lrdel svg{width:13px;height:13px}.lrdel:hover{color:var(--clay)}
-.lradd{display:flex;gap:6px;margin-top:7px}.lradd input{flex:1;font-size:12px}
 .hint{font-size:11px;color:var(--muted);margin-top:5px;line-height:1.4}
 .rwarn{font-size:11px;color:var(--clay);margin-top:6px;line-height:1.4;display:none}.rwarn.show{display:block}
 .imgdrop{border:1.5px dashed var(--muted);border-radius:10px;min-height:92px;display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden;position:relative;background:var(--surface-1)}
@@ -210,12 +209,6 @@ textarea.fld{height:auto;min-height:54px;padding:8px 10px;resize:vertical;line-h
 .mprn{display:block;font-size:13px;color:var(--text);overflow-wrap:anywhere;line-height:1.3}
 .mprs{display:block;font-size:11px;color:var(--muted);font-family:var(--mono)}
 .mpr.off{opacity:.55}
-.mpadd{display:flex;gap:6px;padding:7px 9px 5px;border-top:1px solid var(--border);margin-top:5px}
-.mpadd input{flex:1;min-width:0;font-size:12px;font-family:var(--mono);padding:5px 8px;border-radius:7px;border:1px solid var(--border);background:var(--surface-1);color:var(--text)}
-.mpadd input::placeholder{color:var(--muted)}
-.mpaddbtn{flex:none;font-size:12px;padding:5px 11px;border-radius:7px;border:1px solid var(--border);background:var(--surface-1);color:var(--text)}
-.mpaddbtn:hover{background:var(--surface-2)}
-.mpaddbtn:disabled{opacity:.6}
 .mpra{display:inline-flex;align-items:center;gap:7px;color:var(--text-2);flex:none}.mpra svg{width:16px;height:16px}.mpra .ok{color:var(--clay);display:inline-flex}
 .mpico{display:flex;color:var(--text-2)}.mpico.ok{color:var(--clay)}
 .mpdel{display:inline-flex;color:var(--muted);cursor:pointer}.mpdel:hover{color:var(--text)}.mpdel svg{width:15px;height:15px}
@@ -875,7 +868,6 @@ function renderModelGroup(){
     const gl=el("div","mpg",grp[0].blabel);
     if(bid===SYS.recommended)gl.appendChild(el("span","mprec","★ Recommended"));   // best fit for this Mac's RAM
     pop.appendChild(gl);grp.forEach(b=>pop.appendChild(popRow(b)));
-    if(bid==="krea2-turbo")pop.appendChild(addLocalRow());   // user-registered local checkpoints
   });
   btn.onclick=e=>{e.stopPropagation();POPEN=!POPEN;pop.classList.toggle("open",POPEN);btn.setAttribute("aria-expanded",POPEN?"true":"false");};
   wrap.appendChild(btn);wrap.appendChild(pop);modelGroup.appendChild(wrap);
@@ -930,30 +922,6 @@ async function delVariant(b){
 }
 async function refreshCatalog(){try{CATALOG=await(await fetch("/api/catalog")).json();}catch(e){}renderModelGroup();reconcile();}
 async function refreshModels(){try{BACKENDS=(await(await fetch("/api/models")).json()).backends;}catch(e){}}
-
-function addLocalRow(){   // register a local .safetensors checkpoint (Krea 2 fine-tunes); config is a
-  const row=el("div","mpadd");   // same-named .json next to the file — precision is inferred if absent
-  const inp=el("input");inp.type="text";inp.placeholder="/path/to/model.safetensors";
-  inp.setAttribute("aria-label","Path to a local .safetensors model");
-  const btn=el("button","mpaddbtn","Add");
-  btn.onclick=async e=>{
-    e.stopPropagation();
-    const p=inp.value.trim();if(!p)return;
-    btn.disabled=true;btn.textContent="…";
-    try{
-      const r=await fetch("/api/localmodels/add",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({path:p})});
-      const d=await r.json().catch(()=>({}));
-      if(!r.ok||(d.ok===false))throw new Error(d.error||("server "+r.status));
-      inp.value="";
-      await refreshModels();await refreshCatalog();
-      if(d.entry){POPEN=false;setActive("krea2-turbo:local:"+d.entry.name);}
-    }catch(err){showErr("Add failed: "+err.message);}
-    finally{btn.disabled=false;btn.textContent="Add";}
-  };
-  inp.onclick=e=>e.stopPropagation();
-  row.appendChild(inp);row.appendChild(btn);
-  return row;
-}
 
 function renderParams(b,preset){   // preset: saved params from a gallery item ("Restore settings")
   paramGroups.innerHTML="";PV={};IMGSET={};
@@ -1058,7 +1026,8 @@ function control(p,pre){
     const list=el("div","lrlist");
     const rerender=()=>{
       list.innerHTML="";
-      if(!LORAS.length){list.appendChild(el("div","hint","No LoRAs yet — add one below (a Civitai/HF download URL or a local .safetensors path)."));return;}
+      if(!LORAS.length){list.appendChild(el("div","hint","No LoRAs yet — drop .safetensors files into "+
+        "~/Library/Application Support/Alis Studio/loras/ (or ask your agent to import one); new files appear here automatically."));return;}
       LORAS.forEach(lr=>{
         const sel=PV[p.key].find(e=>e.name===lr.name);
         const row=el("div","lrrow"+(sel?" on":""));
@@ -1080,18 +1049,11 @@ function control(p,pre){
         row.appendChild(del);list.appendChild(row);
       });};
     rerender();
-    const addrow=el("div","lradd");
-    const src=document.createElement("input");src.type="text";src.className="fld";
-    src.placeholder="Civitai ‘Download’ button link · HF /resolve/ URL · /path/to/lora.safetensors";
-    src.title="On Civitai: right-click the Download button → copy link. On Hugging Face: the file's /resolve/ URL.";
-    const btn=el("button","pill","Add");
-    btn.onclick=async()=>{const v=src.value.trim();if(!v)return;btn.disabled=true;btn.textContent="Adding…";
-      try{const r=await fetch("/api/loras/add",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({source:v})}).then(x=>x.json());
-        if(r.ok){LORAS=r.items;src.value="";rerender();}else showErr(r.error||"Couldn't add the LoRA.");
-      }catch(e){showErr("Couldn't add the LoRA: "+e.message);}
-      finally{btn.disabled=false;btn.textContent="Add";}};
-    addrow.appendChild(src);addrow.appendChild(btn);
-    c.appendChild(list);c.appendChild(addrow);
+    // the library is a plain folder on disk (files may be dropped in or imported by an agent,
+    // outside this app) — re-read it whenever the panel renders, not just on page load
+    fetch("/api/loras").then(r=>r.json()).then(d=>{
+      if(d.items&&JSON.stringify(d.items)!==JSON.stringify(LORAS)){LORAS=d.items;rerender();}}).catch(()=>{});
+    c.appendChild(list);
     if(p.hint)c.appendChild(el("div","hint",p.hint));
     return c;
   }

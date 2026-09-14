@@ -8,6 +8,43 @@ The version lives in exactly one place — `studio/__version__` (in `studio/__in
 `pyproject.toml` reads it via `[tool.setuptools.dynamic]`, the server injects it into the
 web UI, and the DMG build stamps it into the app bundle.
 
+## [0.9.3] — 2026-09-14
+
+### Added
+- **LoKr LoRAs on Krea 2 Turbo.** Most Krea 2 LoRAs on Civitai are ai-toolkit **LoKr** files —
+  weights stored as a Kronecker product (`lokr_w1` ⊗ `lokr_w2`) rather than the low-rank
+  `lora_down`/`lora_up` pairs the `krea2-alis-mlx` loader understands, so they used to fail with
+  "Unrecognized LoRA key". The Krea 2 backend now applies direct w1/w2 LoKr files itself: the
+  delta is applied factorized (input viewed as factor blocks, two small matmuls — a quarter of
+  the dense-delta cost, no `out×in` tensor ever materialized), which is **exact** — truncating a
+  trained LoKr to a low-rank pair is not viable (measured on a 24k-step file: rank 256 keeps
+  ~55% of the delta energy; the spectra are flat). Same library, strength slider, stacking, and
+  clean revert as regular LoRAs; the file's per-layer `.alpha` buffer is deliberately ignored
+  (both ai-toolkit and ComfyUI apply direct w1/w2 LoKr at scale 1.0). Low-rank `_a`/`_b` LoKr
+  variants are rejected with a clear message.
+
+### Fixed
+- **Krea 2 failed to load on a HF-unreachable network even with everything cached.** The package's
+  pipeline pings `HuggingFace` (`HfApi().model_info`, no offline fallback) on *every* load to locate
+  the shared encoder/VAE/tokenizer — on a network where huggingface.co is blocked this surfaced as
+  `SSL: UNEXPECTED_EOF_WHILE_READING` or a connect timeout, killing generation of fully-downloaded
+  builds. The backend now passes the (completeness-checked) cache dir explicitly and loads
+  already-downloaded transformer builds straight from cache: zero network, instant load. Downloads
+  that do need the network (a not-yet-downloaded build) now fail with an actionable message instead
+  of a raw SSL traceback.
+
+### Removed
+- **In-app "add LoRA / add checkpoint" inputs** (the LoRA panel's URL/path box and the model
+  picker's local-checkpoint path row), along with the endpoints behind them (`/api/loras/add` with
+  its Civitai/HF downloader, and `/api/localmodels/add`). Hand-rolled add flows couldn't cover the
+  real variety of files out there — format vetting is a job for an agent with the project's
+  `import-local-model` skill, which now documents LoRA checking + importing (base-model metadata,
+  LoKr vs low-rank key formats, known-unsupported variants) alongside the existing checkpoint
+  procedure. The library itself is unchanged: `~/Library/Application Support/Alis Studio/loras/`
+  is the whole registry — files dropped there (by an agent or by hand) appear in the LoRA panel
+  automatically, which now re-reads `/api/loras` each time it renders. Deleting from the panel
+  and checkpoint deregistration still work as before.
+
 ## [0.9.1] — 2026-07-14
 
 ### Added

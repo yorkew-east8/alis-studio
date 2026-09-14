@@ -1,10 +1,11 @@
 ---
 name: import-local-model
 description: >
-  把本地 .safetensors 模型文件导入 Alis Studio 的模型列表。检查原始格式（MLX 打包量化 /
-  ComfyUI int8_convrot 旋转量化 / bf16），需要时用 scripts/convert_krea2_official.py 做正确
-  转换（含 Hadamard 去旋转），再注册为 Krea 2 后端的本地模型。当用户要求"添加/导入本地模型"、
-  "转换模型文件"、"模型出噪点/出乱图/加载失败"时使用。
+  把本地 .safetensors 文件导入 Alis Studio：模型 checkpoint（检查 MLX 打包量化 /
+  ComfyUI int8_convrot 旋转量化 / bf16，需要时用 scripts/convert_krea2_official.py 做含
+  Hadamard 去旋转的转换，再注册为 Krea 2 后端的本地模型）和 LoRA（检查 base 模型与
+  LoKr/低秩键格式，放进 LoRA 库目录即可用）。当用户要求"添加/导入本地模型或 LoRA"、
+  "转换模型文件"、"模型/LoRA 出噪点/出乱图/加载失败/不生效"时使用。
 ---
 
 # 导入本地模型文件
@@ -13,6 +14,10 @@ description: >
 布局是 MLX 打包量化（U32 weight + group-64 的 `scales`/`biases`）。Civitai/社区下载的文件
 往往是别的格式，**直接注册会加载成功但生成乱图**——必须先检测格式。不要修改 venv 里的
 krea2 包，所有处理都在应用层完成。
+
+**两类文件走不同流程，先分清**：LoRA 是小文件（几十 MB – 2 GB，键名带 `lora_`/`lokr_`），
+放进 LoRA 库目录即可，见文末[LoRA 导入](#lora-导入)；checkpoint 是完整模型（8–15 GB，
+键名是 `blocks.*.weight`/`scales` 等结构张量），走下面的完整流程。
 
 ## 第一步：检测原始格式
 
@@ -124,3 +129,71 @@ print(lm.add('/Users/$USER/models/<文件名>.safetensors'))   # 读同名旁车
 - 8-bit 模型 ~14 GB，RAM 门槛 24 GB；用户 Mac 内存不足时提醒换小模型或调低分辨率
 - 想覆盖推断结果/改显示名：在模型文件旁放同名 `.json`（如 `{"precision": "8bit", "label": "My Mix"}`）
 - 精度推断失败时报错并停止，不要瞎猜
+
+---
+
+# LoRA 导入
+
+LoRA **没有注册表——库目录即列表**：`~/Library/Application Support/Alis Studio/loras/` 下的
+`.safetensors` 文件就是全部条目，运行中的服务实时可见（`/api/loras` 每次现扫），**无需重启**、
+无需转换（两种主流键格式后端都原生支持）。UI 的 LoRA 面板渲染时会自动重读目录。
+
+## 第一步：检测（只读 header，别加载权重）
+
+```bash
+venv/bin/python - <<'EOF'
+import json, struct
+path = "<文件路径>"
+with open(path, "rb") as f:                       # 自包含解析：lm._read_header 会丢弃 __metadata__，
+    (n,) = struct.unpack("<Q", f.read(8))         # 而 base 模型判定恰恰全靠它，所以这里手读
+    header = json.loads(f.read(n))
+keys = [k for k in header if k != "__metadata__"]
+meta = header.get("__metadata__") or {}
+print("base:", meta.get("ss_base_model_version"), "| trained by:",
+      (json.loads(meta["software"])["name"] if "software" in meta else "?"))
+kinds = {}
+for suf in (".lokr_w1", ".lokr_w2", ".lokr_w1_a", ".lokr_w1_b", ".lokr_w2_a", ".lokr_w2_b",
+            ".lokr_t2", ".lora_down.weight", ".lora_up.weight", ".lora_A.weight", ".lora_B.weight",
+            ".alpha"):
+    c = sum(1 for k in keys if k.endswith(suf))
+    if c: kinds[suf] = c
+print("key kinds:", kinds, "| tensors:", len(keys))
+EOF
+```
+
+判定规则（全部满足才导入）：
+
+| 检测结果 | 结论 | 处理 |
+|---|---|---|
+| `ss_base_model_version` 含 `krea2`，键为 `*.lokr_w1` + `*.lokr_w2`（可带 `.alpha`） | ai-toolkit **LoKr**（Krea 2 社区 LoRA 的主流格式） | 直接导入；`.alpha` 缓冲被有意忽略（ai-toolkit 与 ComfyUI 对直接 w1/w2 都按 scale 1.0 应用） |
+| base 为 krea2，键为 `*.lora_down/up` 或 `*.lora_A/B`（配 `alpha`/metadata 的 `lora_alpha`+`lora_rank`） | 普通**低秩 LoRA** | 直接导入（`krea2-alis-mlx` 的运行时低秩分支） |
+| base 为 krea2，但有 `*.lokr_w1_a/_b`、`*.lokr_w2_a/_b`、`*.lokr_t2` | **低秩因子 LoKr**（少见） | 不支持，明确告知用户；不要导入（生成时会报错） |
+| base 不是 krea2（`sd15`/`sdxl`/`flux` 等）或无 base 元数据 | **别的模型的 LoRA** | 拒绝导入，告知需要 Krea 2 专训版本；硬导入会在生成时报 "won't fit" |
+| 键是 `blocks.*.weight`/`scales`/`biases` 等结构张量，文件 >5 GB | 这不是 LoRA，是 **checkpoint** | 走上面的模型导入流程 |
+
+## 第二步：放进库目录
+
+```bash
+mkdir -p ~/Library/Application\ Support/Alis\ Studio/loras
+mv /path/to/<lora>.safetensors ~/Library/Application\ Support/Alis\ Studio/loras/
+```
+
+- 文件名即库内显示名（去掉 `.safetensors` 后缀）。合法字符：字母数字、`-`、`_`、`.`、空格；
+  不以 `.` 开头。不合法的名字 UI 删不掉、生成时也解析不到（server 的 `_safe_lora_name` 会拒）。
+- 放 Downloads 里直接引用**不行**（LoRA 是复制进库的，不像 checkpoint 原地引用），必须移入/拷入库目录。
+- 覆盖同名文件前先确认用户（已保存的生图配方按名字引用 LoRA，静默替换会让旧配方的含义改变）。
+
+## 第三步：验证
+
+1. **列表可见**：`curl -s localhost:7860/api/loras`（或实际端口）出现新条目即成功，无需重启。
+2. **效果对比**（推荐，同 seed）：先不带 LoRA 生成一张基线，再勾选 LoRA 生成同 prompt/seed 的一张——
+   两图应明显不同；然后取消勾选再生成一次，应与基线**逐位一致**（md5 相同，运行时分支卸载是精确恢复）。
+3. **症状速查**：
+
+| 现象 | 根因 |
+|---|---|
+| 生成时报 "won't fit"/"doesn't exist in the model tree"/"shape mismatch" | LoRA 不是给 Krea 2 训的（base 不匹配），换文件 |
+| 生成时报 "low-rank (_a/_b tensors)" | 低秩因子 LoKr，暂不支持 |
+| 生成报 "Unrecognized LoRA key" | 未知键格式（`krea2/lora.py` 的 `_normalize` 只认低秩对；LoKr 由后端 `studio/backends/krea2.py` 处理）——把报错原样报告 |
+| 图像带规律的几何伪影、局部错乱 | LoRA 强度过高或文件损坏；先降 strength 到 0.5 复测，再考虑重下 |
+| 勾选后效果毫无变化 | 检查是否真的勾选 + scale>0；同 seed 基线对比没做对（seed 不同时"没变化"不可信） |
