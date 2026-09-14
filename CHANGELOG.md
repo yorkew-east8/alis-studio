@@ -23,6 +23,16 @@ web UI, and the DMG build stamps it into the app bundle.
   (both ai-toolkit and ComfyUI apply direct w1/w2 LoKr at scale 1.0). Low-rank `_a`/`_b` LoKr
   variants are rejected with a clear message.
 
+### Fixed
+- **Krea 2 failed to load on a HF-unreachable network even with everything cached.** The package's
+  pipeline pings `HuggingFace` (`HfApi().model_info`, no offline fallback) on *every* load to locate
+  the shared encoder/VAE/tokenizer — on a network where huggingface.co is blocked this surfaced as
+  `SSL: UNEXPECTED_EOF_WHILE_READING` or a connect timeout, killing generation of fully-downloaded
+  builds. The backend now passes the (completeness-checked) cache dir explicitly and loads
+  already-downloaded transformer builds straight from cache: zero network, instant load. Downloads
+  that do need the network (a not-yet-downloaded build) now fail with an actionable message instead
+  of a raw SSL traceback.
+
 ## [0.9.1] — 2026-07-14
 
 ### Added

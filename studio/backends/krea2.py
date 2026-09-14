@@ -238,6 +238,21 @@ class Krea2Backend(Backend):
                         "installed": not e["missing"]})
         return out
 
+    @staticmethod
+    def _cached_base() -> str:
+        """The shared encoder/VAE/tokenizer cache dir if it looks complete, else ''.
+
+        Passing it to Krea2Pipeline keeps _base_dir() from pinging HuggingFace on every
+        load — that call has no offline fallback, so on a network where HF is unreachable
+        (SSL EOF / timeout) even fully-cached builds used to fail to load."""
+        from krea2.pipeline import _CACHE, BASE_REPO
+        root = os.path.join(_CACHE, BASE_REPO.replace("/", "__"))
+        if (os.path.isfile(os.path.join(root, "model_index.json"))
+                and all(os.path.isdir(os.path.join(root, sub)) and os.listdir(os.path.join(root, sub))
+                        for sub in ("vae", "text_encoder", "tokenizer"))):
+            return root
+        return ""
+
     def _get(self, variant: str):
         import gc
         import mlx.core as mx
@@ -251,12 +266,36 @@ class Krea2Backend(Backend):
                                      "or delete the model here and add it again.")
                 prec, path = entry["precision"], entry["path"]
             else:
-                prec, path = resolve_weights(os.getcwd(), precision=variant, download=True)
+                _, fname, cache = self._transformer_path(variant)
+                if os.path.exists(cache):
+                    # already downloaded — load straight from the cache. resolve_weights would
+                    # HEAD-probe HuggingFace first and only fall back to the cache if the probe
+                    # fails; skipping it makes cached builds load with zero network, instantly.
+                    prec, path = variant, cache
+                else:
+                    try:
+                        prec, path = resolve_weights(os.getcwd(), precision=variant, download=True)
+                    except OSError as e:
+                        # requests' connect/SSL/timeout errors are OSError; the package's own
+                        # "interrupted, re-run to resume" OSError lands here too (also fine to retry)
+                        raise ValueError(
+                            f"Couldn't download the {variant} build — huggingface.co is unreachable "
+                            f"({e}). Check the network (a VPN is often required for HF) and retry; "
+                            "partial downloads resume where they left off.") from None
             # free the previous build before loading another — two 12.9B transformers won't fit
             self._pipe, self._variant = None, None
             gc.collect()
             mx.clear_cache()
-            self._pipe = Krea2Pipeline(path, precision=prec, base_dir=os.environ.get("KREA2_BASE_DIR"))
+            base = os.environ.get("KREA2_BASE_DIR") or self._cached_base()
+            try:
+                self._pipe = Krea2Pipeline(path, precision=prec, base_dir=base or None)
+            except OSError as e:
+                # Only the network paths raise OSError here (missing/corrupt cache files raise
+                # inside strict load as something else). Used to surface as a raw SSL/timeout error.
+                raise ValueError(
+                    f"Couldn't reach huggingface.co to fetch Krea 2 components ({e}). "
+                    "Check the network (a VPN is often required for HF) and retry — model builds "
+                    "already downloaded to this Mac load and run fully offline.") from None
             # built-ins cache per precision; local checkpoints per full variant id (two fine-tunes
             # with the same precision are still different weights)
             self._variant = variant if entry is not None else prec
@@ -361,7 +400,13 @@ class Krea2Backend(Backend):
             raise ValueError("Local models have nothing to download — if it shows as missing, its "
                              "file was moved or deleted; delete it here and add it again.")
         from studio.download import download_files
-        download_files(self._specs(variant), progress)
+        try:
+            specs = self._specs(variant)   # HfApi() listing — first thing to fail on a blocked net
+        except OSError as e:
+            raise ValueError(
+                f"Couldn't reach huggingface.co to list the {variant} build's files ({e}). "
+                "Check the network (a VPN is often required for HF) and retry.") from None
+        download_files(specs, progress)
 
     def delete(self, variant: str) -> None:
         if variant.startswith(_LOCAL):
