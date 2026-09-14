@@ -280,124 +280,6 @@ def _lora_list() -> list:
     return items
 
 
-def _verify_safetensors(path: str) -> None:
-    """A .safetensors file starts with a uint64 header length + a '{' JSON header. The most common
-    first-timer mistake is pasting a Civitai model-PAGE url — we'd happily save the HTML otherwise,
-    and mflux would later fuse it as a silent no-op."""
-    import struct
-    try:
-        with open(path, "rb") as f:
-            n = struct.unpack("<Q", f.read(8))[0]
-            first = f.read(1)
-        ok = 2 <= n <= 100 * 1024 * 1024 and first == b"{"
-    except Exception:
-        ok = False
-    if not ok:
-        raise ValueError("That file isn't a .safetensors LoRA. On Civitai, copy the link from the "
-                         "Download button (not the page URL); on Hugging Face, use the file's "
-                         "/resolve/ URL.")
-
-
-def _lora_add(source: str) -> list:
-    """Add a LoRA to the library from a URL (Civitai/HF/direct) or a local file path.
-    Returns the updated list; raises ValueError with a user-facing message on failure."""
-    import shutil
-    import urllib.request
-    source = (source or "").strip()
-    if not source:
-        raise ValueError("Give a download URL or a local .safetensors path.")
-    d = _lora_dir()
-    if source.startswith(("http://", "https://")):
-        url = source
-        if "civitai.com" in url and "token=" not in url and os.environ.get("CIVITAI_API_TOKEN"):
-            url += ("&" if "?" in url else "?") + "token=" + os.environ["CIVITAI_API_TOKEN"]
-        req = urllib.request.Request(url, headers={"User-Agent": "alis-studio"})
-        import ssl
-        try:  # python.org macOS builds ship without system CAs wired into urllib — use certifi's bundle
-            import certifi
-            ctx = ssl.create_default_context(cafile=certifi.where())
-        except Exception:
-            ctx = ssl.create_default_context()
-        tmp = None
-        try:
-            with urllib.request.urlopen(req, timeout=60, context=ctx) as r:
-                # filename: content-disposition beats the URL tail (Civitai serves opaque URLs).
-                # RFC 6266: prefer plain filename=, fall back to filename*=UTF-8''… (percent-encoded)
-                from urllib.parse import unquote
-                cd = r.headers.get("Content-Disposition") or ""
-                name = star = None
-                for part in cd.split(";"):
-                    part = part.strip()
-                    if part.startswith("filename*="):
-                        star = unquote(part.split("''", 1)[-1].strip().strip('"'))
-                    elif part.startswith("filename="):
-                        name = part[len("filename="):].strip().strip('"').strip("'")
-                name = name or star
-                if not name:
-                    name = os.path.basename(url.split("?")[0]) or "lora.safetensors"
-                name = "".join(c for c in name if c.isalnum() or c in "-_. ").lstrip(". ") or "lora.safetensors"
-                if not name.endswith(".safetensors"):
-                    name += ".safetensors"
-                if not _safe_lora_name(name):   # the WRITE path must accept exactly what list/delete accept
-                    raise ValueError(f"Unusable file name from the server: {name!r}")
-                dst = os.path.join(d, name)
-                if os.path.exists(dst):
-                    raise ValueError(f"'{name}' is already in the library — delete it first if you "
-                                     "want to replace it (saved recipes reference LoRAs by name).")
-                cap = 4 * 1024 * 1024 * 1024   # LoRAs are MBs–1.5 GB; anything past 4 GB is not a LoRA
-                cl = r.headers.get("Content-Length")
-                if cl and int(cl) > cap:
-                    raise ValueError(f"That file is {int(cl)/1e9:.1f} GB — too big to be a LoRA.")
-                tmp = os.path.join(d, "." + name + ".part")
-                deadline = time.time() + 30 * 60   # wall-clock cap: timeout=60 only bounds each socket op
-                got = 0
-                with open(tmp, "wb") as f:
-                    while True:
-                        chunk = r.read(1 << 20)
-                        if not chunk:
-                            break
-                        got += len(chunk)
-                        if got > cap:
-                            raise ValueError("Download exceeded 4 GB — aborted (not a LoRA?).")
-                        if time.time() > deadline:
-                            raise ValueError("Download took over 30 minutes — aborted.")
-                        f.write(chunk)
-                _verify_safetensors(tmp)   # reject HTML/error pages saved as ".safetensors"
-                os.replace(tmp, dst)
-                tmp = None
-        except ValueError:
-            raise
-        except Exception as e:
-            msg = str(e)
-            if "401" in msg or "403" in msg:
-                raise ValueError("This download needs a Civitai login — create a free API key at "
-                                 "civitai.com/user/account and start the app with CIVITAI_API_TOKEN set.") from None
-            raise ValueError(f"Couldn't download the LoRA: {msg}") from None
-        finally:
-            if tmp and os.path.exists(tmp):   # no orphaned hidden .part files on any failure
-                try:
-                    os.remove(tmp)
-                except OSError:
-                    pass
-    else:
-        src = os.path.expanduser(source)
-        if not os.path.isfile(src) or not src.endswith(".safetensors"):
-            raise ValueError("Not a .safetensors file: " + source)
-        _verify_safetensors(src)
-        # sanitize like the URL branch — Civitai filenames love parentheses etc.; the library name
-        # must be exactly what list/delete/generate accept
-        name = "".join(c for c in os.path.basename(src) if c.isalnum() or c in "-_. ").lstrip(". ")
-        if not name.endswith(".safetensors"):
-            name += ".safetensors"
-        if not _safe_lora_name(name):
-            raise ValueError(f"Couldn't derive a usable library name from {os.path.basename(src)!r} — rename the file.")
-        dst = os.path.join(d, name)
-        if os.path.exists(dst):
-            raise ValueError(f"'{name}' is already in the library — delete it first to replace it.")
-        shutil.copy2(src, dst)
-    return _lora_list()
-
-
 def _resolve_loras(params) -> None:
     """Rewrite params['loras'] from UI entries [{'name','scale'}] to backend entries
     [{'path': <abs library path>, 'scale': float}], validating names against the library."""
@@ -532,8 +414,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, "application/json", b'{"ok":true}')
             return
         if self.path not in ("/api/generate", "/api/upscale", "/api/download", "/api/delete", "/api/enhance",
-                             "/api/gallery/delete", "/api/loras/add", "/api/loras/delete",
-                             "/api/localmodels/add"):
+                             "/api/gallery/delete", "/api/loras/delete"):
             self._send(404, "text/plain", b"not found")
             return
         try:
@@ -547,13 +428,6 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == "/api/generate":
             self._generate(req)
-        elif self.path == "/api/loras/add":
-            try:
-                with _DLLOCK:   # serialize with other downloads — deterministic .part names
-                    items = _lora_add(str(req.get("source", "")))
-                self._send(200, "application/json", json.dumps({"ok": True, "items": items}).encode())
-            except ValueError as e:
-                self._send(200, "application/json", json.dumps({"ok": False, "error": str(e)}).encode())
         elif self.path == "/api/loras/delete":
             name = str(req.get("name", ""))
             if _safe_lora_name(name):
@@ -562,12 +436,6 @@ class Handler(BaseHTTPRequestHandler):
                 except OSError:
                     pass
             self._send(200, "application/json", json.dumps({"ok": True, "items": _lora_list()}).encode())
-        elif self.path == "/api/localmodels/add":
-            try:
-                entry = local_models.add(str(req.get("path", "")))
-                self._send(200, "application/json", json.dumps({"ok": True, "entry": entry}).encode())
-            except ValueError as e:
-                self._send(200, "application/json", json.dumps({"ok": False, "error": str(e)}).encode())
         elif self.path == "/api/upscale":
             self._upscale(req)
         elif self.path == "/api/enhance":

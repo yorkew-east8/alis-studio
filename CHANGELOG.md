@@ -33,6 +33,18 @@ web UI, and the DMG build stamps it into the app bundle.
   that do need the network (a not-yet-downloaded build) now fail with an actionable message instead
   of a raw SSL traceback.
 
+### Removed
+- **In-app "add LoRA / add checkpoint" inputs** (the LoRA panel's URL/path box and the model
+  picker's local-checkpoint path row), along with the endpoints behind them (`/api/loras/add` with
+  its Civitai/HF downloader, and `/api/localmodels/add`). Hand-rolled add flows couldn't cover the
+  real variety of files out there — format vetting is a job for an agent with the project's
+  `import-local-model` skill, which now documents LoRA checking + importing (base-model metadata,
+  LoKr vs low-rank key formats, known-unsupported variants) alongside the existing checkpoint
+  procedure. The library itself is unchanged: `~/Library/Application Support/Alis Studio/loras/`
+  is the whole registry — files dropped there (by an agent or by hand) appear in the LoRA panel
+  automatically, which now re-reads `/api/loras` each time it renders. Deleting from the panel
+  and checkpoint deregistration still work as before.
+
 ## [0.9.1] — 2026-07-14
 
 ### Added

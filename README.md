@@ -90,17 +90,15 @@ too large to ship inside a DMG.
   behaviour you know from CivitAI, handy for iterating on a prompt. Throttled to ~3 frames per run;
   each frame is a quick VAE decode, so it adds a little time on the big models — turn it off for
   maximum speed. Available on Z-Image, CyberRealistic Z, ERNIE-Image, Qwen-Image, and FLUX.
-- **LoRA** — a shared library for style/subject adapters: paste a download URL (on Civitai, the
-  **Download button's link**, not the page URL; on Hugging Face, the file's `/resolve/` URL) or a
-  local `.safetensors`, check the ones to apply, set per-LoRA strength — multiple LoRAs stack, and
-  Civitai's usual key formats are recognized automatically. Works on **Krea 2 Turbo**, Z-Image,
-  CyberRealistic Z, Qwen-Image (+Edit), and FLUX — pick LoRAs made for the selected model family.
-  (On Krea 2 the adapters are applied as a runtime branch — never merged into the weights —
-  so they stack and revert cleanly with no reload. ai-toolkit **LoKr** files — the `lokr_w1`/`lokr_w2`
-  Kronecker format most Krea 2 LoRAs ship in — are applied natively too, factorized and exact.
-  Z-Image has the largest LoRA scene on Civitai.)
-  Auth-gated Civitai files need `CIVITAI_API_TOKEN` in the
-  environment (free key from civitai.com/user/account) — easiest when running from a terminal.
+- **LoRA** — a shared library for style/subject adapters: drop `.safetensors` files into
+  `~/Library/Application Support/Alis Studio/loras/` (or ask your coding agent to vet and import
+  one — the project ships a skill for that), then check the ones to apply and set per-LoRA
+  strength — multiple LoRAs stack, and Civitai's usual key formats are recognized automatically.
+  Works on **Krea 2 Turbo**, Z-Image, CyberRealistic Z, Qwen-Image (+Edit), and FLUX — pick LoRAs
+  made for the selected model family. (On Krea 2 the adapters are applied as a runtime branch —
+  never merged into the weights — so they stack and revert cleanly with no reload. ai-toolkit
+  **LoKr** files — the `lokr_w1`/`lokr_w2` Kronecker format most Krea 2 LoRAs ship in — are applied
+  natively too, factorized and exact. Z-Image has the largest LoRA scene on Civitai.)
 - **Restore settings & reproducibility** — every generated image keeps its full recipe (model, size,
   steps, seed, LoRAs); one lightbox click restores everything for a re-run or a tweak (restoring
   turns auto-seed off so the saved seed actually applies). The recipe is also embedded in the PNG

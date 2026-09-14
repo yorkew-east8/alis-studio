@@ -219,13 +219,15 @@ def _img2img_args(params):
 
 def _lora_params():
     """The LoRA control. The UI renders type 'loras' as the LoRA library (checkbox + scale per
-    entry, add-by-URL/path); the server validates the picked names against the library directory
-    and rewrites params['loras'] to [{'path': <abs path>, 'scale': float}, ...]."""
+    entry; the library is a plain folder — files land there via the import skill or a manual
+    copy); the server validates the picked names against the library directory and rewrites
+    params['loras'] to [{'path': <abs path>, 'scale': float}, ...]."""
     return [
         {"key": "loras", "label": "LoRA", "type": "loras", "group": "LoRA",
          "hint": "Style/subject adapters applied on top of the model — pick ones made for THIS "
-                 "model family. On Civitai copy the Download button's link (not the page URL). "
-                 "Changing the set is applied before the run (a short pause before the first step)."},
+                 "model family. New files go in the LoRA library folder (or ask your agent to "
+                 "import them). Changing the set is applied before the run (a short pause "
+                 "before the first step)."},
     ]
 
 

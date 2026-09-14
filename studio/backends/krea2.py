@@ -2,9 +2,9 @@
 
 Weights are pulled from Hugging Face on first use (cached under ~/.cache/krea2_alis_mlx);
 drop a transformer_*.safetensors in the working directory to use a local copy instead.
-Users can also register arbitrary local checkpoints (fine-tunes) through the model manager —
-see studio/local_models.py; those load straight from their own path with the precision their
-file was quantized with.
+Users can also register arbitrary local checkpoints (fine-tunes) via the import skill
+(.agents/skills/import-local-model) or studio/local_models.add() directly — those load
+straight from their own path with the precision their file was quantized with.
 """
 
 from __future__ import annotations
