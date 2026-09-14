@@ -8,6 +8,21 @@ The version lives in exactly one place — `studio/__version__` (in `studio/__in
 `pyproject.toml` reads it via `[tool.setuptools.dynamic]`, the server injects it into the
 web UI, and the DMG build stamps it into the app bundle.
 
+## [0.9.3] — 2026-09-14
+
+### Added
+- **LoKr LoRAs on Krea 2 Turbo.** Most Krea 2 LoRAs on Civitai are ai-toolkit **LoKr** files —
+  weights stored as a Kronecker product (`lokr_w1` ⊗ `lokr_w2`) rather than the low-rank
+  `lora_down`/`lora_up` pairs the `krea2-alis-mlx` loader understands, so they used to fail with
+  "Unrecognized LoRA key". The Krea 2 backend now applies direct w1/w2 LoKr files itself: the
+  delta is applied factorized (input viewed as factor blocks, two small matmuls — a quarter of
+  the dense-delta cost, no `out×in` tensor ever materialized), which is **exact** — truncating a
+  trained LoKr to a low-rank pair is not viable (measured on a 24k-step file: rank 256 keeps
+  ~55% of the delta energy; the spectra are flat). Same library, strength slider, stacking, and
+  clean revert as regular LoRAs; the file's per-layer `.alpha` buffer is deliberately ignored
+  (both ai-toolkit and ComfyUI apply direct w1/w2 LoKr at scale 1.0). Low-rank `_a`/`_b` LoKr
+  variants are rejected with a clear message.
+
 ## [0.9.1] — 2026-07-14
 
 ### Added

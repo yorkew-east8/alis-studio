@@ -95,8 +95,10 @@ too large to ship inside a DMG.
   local `.safetensors`, check the ones to apply, set per-LoRA strength — multiple LoRAs stack, and
   Civitai's usual key formats are recognized automatically. Works on **Krea 2 Turbo**, Z-Image,
   CyberRealistic Z, Qwen-Image (+Edit), and FLUX — pick LoRAs made for the selected model family.
-  (On Krea 2 the adapters are applied as a runtime low-rank branch — never merged into the weights —
-  so they stack and revert cleanly with no reload. Z-Image has the largest LoRA scene on Civitai.)
+  (On Krea 2 the adapters are applied as a runtime branch — never merged into the weights —
+  so they stack and revert cleanly with no reload. ai-toolkit **LoKr** files — the `lokr_w1`/`lokr_w2`
+  Kronecker format most Krea 2 LoRAs ship in — are applied natively too, factorized and exact.
+  Z-Image has the largest LoRA scene on Civitai.)
   Auth-gated Civitai files need `CIVITAI_API_TOKEN` in the
   environment (free key from civitai.com/user/account) — easiest when running from a terminal.
 - **Restore settings & reproducibility** — every generated image keeps its full recipe (model, size,

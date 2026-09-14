@@ -9,13 +9,162 @@ file was quantized with.
 
 from __future__ import annotations
 
+import json
 import os
+import struct
 
 from .. import local_models
 from .base import Backend
 from .mflux_common import _img2img_args, _img2img_params, _lora_args, _lora_params
 
 _LOCAL = local_models.LOCAL_PREFIX
+
+
+# --- LoKr (ai-toolkit kron) LoRAs --------------------------------------------
+# The krea2-alis-mlx LoRA loader only understands rank-decomposed adapters
+# (lora_A/B, lora_down/up) and raises on anything else. Civitai is full of
+# ai-toolkit LoKr files — weights stored as a Kronecker product lokr_w1 ⊗ lokr_w2
+# (typical layout here: w1 (4,4), w2 = the layer's (out/4, in/4) block) — so the
+# backend applies those itself, mirroring the package's wrap/unwrap design. The
+# delta is applied factorized (never materializing out×in): with x viewed as
+# (in_m, in_n), kron(w1, w2)·x costs out·in/4 FLOPs — a quarter of a dense
+# delta — and it is exact. Truncating a trained LoKr to a low-rank A/B pair is
+# not an option (measured on a 24k-step file: rank 256 keeps ~55% of the delta
+# energy — the spectra are flat; these are full finetunes in LoKr clothing).
+# Scaling: for direct w1/w2 files both ai-toolkit (runtime_scale forced to 1
+# when both factors are full matrices) and ComfyUI's calculate_weight (alpha
+# ignored when no _a/_b rebuild happened) apply kron(w1, w2) at scale 1.0 — the
+# file's per-layer .alpha buffer (often junk, e.g. 1e10) is deliberately not read.
+
+_LOKR_CLS = None
+
+
+def _lokr_cls():
+    """The LoKr wrapper class, built on first use — keeps mlx imports out of module import."""
+    global _LOKR_CLS
+    if _LOKR_CLS is None:
+        from mlx import nn
+
+        class _LoKrLinear(nn.Module):
+            """Wraps a (quantized) linear: y = base(x) + Σ scale_i·kron(w1_i, w2_i)·x.
+
+            Multiple LoKr files on one layer are just more branches (stacking, like the
+            package's LoRALinear holds multiple A/B pairs)."""
+
+            def __init__(self, base, branches):
+                super().__init__()
+                self.base = base
+                self.branches = list(branches)  # each (w1 (out_l, in_m), w2 (out_k, in_n), scale)
+
+            def __call__(self, x):
+                y = self.base(x)
+                for w1, w2, s in self.branches:
+                    # kron row/col order is (p, o) and (q, s) major — reshape into factor
+                    # blocks, contract w2 on the input side, w1 across the out blocks.
+                    h = x.reshape(*x.shape[:-1], w1.shape[1], w2.shape[1])  # (…, in_m, in_n)
+                    h = (h @ w2.T).swapaxes(-1, -2)      # (…, out_k, in_m)
+                    h = h @ w1.T                         # (…, out_k, out_l)
+                    delta = h.swapaxes(-1, -2).reshape(*x.shape[:-1], -1)  # p-major = kron rows
+                    y = y + (s * delta).astype(y.dtype)
+                return y
+
+        _LOKR_CLS = _LoKrLinear
+    return _LOKR_CLS
+
+
+def _is_lokr(path: str) -> bool:
+    """True if the safetensors file carries lokr_w1 tensors (header scan only — no weights load)."""
+    try:
+        with open(path, "rb") as f:
+            n = struct.unpack("<Q", f.read(8))[0]
+            if not 2 <= n <= 100 * 1024 * 1024:
+                return False
+            header = json.loads(f.read(n))
+        return any(k.endswith(".lokr_w1") for k in header if k != "__metadata__")
+    except (OSError, ValueError):
+        return False
+
+
+def _apply_lokrs(transformer, specs) -> list:
+    """Wrap transformer linears with LoKr branches for [(path, scale), …].
+
+    Two-phase like krea2.lora.apply_loras: every target is resolved and shape-checked
+    before the first swap, so a bad file leaves the tree untouched. Returns the wrapped
+    paths (feed back to _unload_lokrs)."""
+    import mlx.core as mx
+    from mlx import nn
+    from krea2.lora import _get_submodule, _linear_dims, _set_submodule, _to_mlx_path
+
+    cls = _lokr_cls()
+    grouped: dict = {}   # target path → [(w1, w2, scale), …]
+    for path, scale in specs:
+        weights = mx.load(path)
+        w1s, w2s = {}, {}
+        for k in weights:
+            if k.endswith((".lokr_w1_a", ".lokr_w1_b", ".lokr_w2_a", ".lokr_w2_b", ".lokr_t2")):
+                raise ValueError(
+                    f"{os.path.basename(path)} stores its LoKr factors low-rank (_a/_b tensors) — "
+                    "this app applies direct w1/w2 LoKr files only.")
+            if k.endswith(".lokr_w1"):
+                w1s[_to_mlx_path(k[: -len(".lokr_w1")])] = weights[k]
+            elif k.endswith(".lokr_w2"):
+                w2s[_to_mlx_path(k[: -len(".lokr_w2")])] = weights[k]
+        missing = set(w1s) ^ set(w2s)
+        if missing:
+            raise ValueError(f"{os.path.basename(path)} has unpaired lokr_w1/w2 tensors for: "
+                             f"{sorted(missing)[:5]}")
+        for tgt, w2 in w2s.items():
+            grouped.setdefault(tgt, []).append((w1s[tgt], w2, float(scale)))
+
+    # phase 1: resolve and validate every target — nothing mutated yet
+    resolved: dict = {}
+    for tgt, branches in grouped.items():
+        try:
+            cur = _get_submodule(transformer, tgt)
+        except (AttributeError, IndexError, KeyError, ValueError) as e:
+            raise ValueError(f"LoKr LoRA targets '{tgt}' which doesn't exist in the model tree") from e
+        while isinstance(cur, cls):   # never nest our own wrappers
+            cur = cur.base
+        # the package may have wrapped a plain LoRA here — branch off it; dims come from its base
+        inner = cur.base if type(cur).__name__ == "LoRALinear" else cur
+        if not isinstance(inner, (nn.Linear, nn.QuantizedLinear)):
+            raise ValueError(f"LoKr LoRA target '{tgt}' is {type(cur).__name__}, not a linear layer")
+        out_f, in_f = _linear_dims(inner)   # catch a wrong-base LoKr here, not as a matmul error mid-run
+        for w1, w2, _ in branches:
+            if w1.shape[0] * w2.shape[0] != out_f or w1.shape[1] * w2.shape[1] != in_f:
+                raise ValueError(
+                    f"LoKr factors {list(w1.shape)} ⊗ {list(w2.shape)} don't tile the "
+                    f"({out_f}, {in_f}) layer at '{tgt}' — was this LoKr built for Krea 2? "
+                    "One made for a different model won't fit.")
+        resolved[tgt] = cur
+
+    # phase 2: swap the wrappers in — no raise conditions below
+    for tgt, branches in grouped.items():
+        bf = [(w1.astype(mx.bfloat16), w2.astype(mx.bfloat16), s) for w1, w2, s in branches]
+        _set_submodule(transformer, tgt, cls(resolved[tgt], bf))
+    mx.eval(transformer.parameters())
+    return list(grouped)
+
+
+def _unload_lokrs(transformer, paths) -> int:
+    """Restore the given wrapped paths to their pre-LoKr modules. Returns how many were unwrapped."""
+    import mlx.core as mx
+    from krea2.lora import _get_submodule, _set_submodule
+
+    cls = _lokr_cls()
+    removed = 0
+    for tgt in paths or []:
+        try:
+            cur = _get_submodule(transformer, tgt)
+        except (AttributeError, IndexError, KeyError, ValueError):
+            continue
+        while isinstance(cur, cls):
+            cur = cur.base
+            removed += 1
+        _set_submodule(transformer, tgt, cur)
+    if removed:
+        mx.eval(transformer.parameters())
+    return removed
 
 
 class Krea2Backend(Backend):
@@ -64,6 +213,9 @@ class Krea2Backend(Backend):
     def __init__(self):
         self._pipe = None
         self._variant = None
+        self._lokr_sig = ()      # currently-applied LoKr (path, scale) set, to skip redundant re-wraps
+        self._lokr_paths = []    # wrapped target paths, for a clean unload
+        self._lokr_pipe = None   # the pipe the wrappers live in (a reload orphans them)
 
     def will_load(self, variant: str) -> bool:
         return self._pipe is None or self._variant != variant   # mirrors the reload check in _get
@@ -128,14 +280,25 @@ class Krea2Backend(Backend):
                              "`pip install -U git+https://github.com/avlp12/krea2_alis_mlx` "
                              "(or reinstall the app), or clear the selected LoRA(s).")
         pipe = self._get(variant)
-        # Krea 2 LoRA is a runtime low-rank branch (not fused at load), so the set is applied per
-        # generation without reloading — set_loras is a cheap no-op when unchanged, and clearing it
-        # (empty specs) reverts to base when nothing is selected. A wrong-base LoRA raises here,
-        # before any denoise work. Guarded so an old package (no set_loras) still runs plain.
+        if self._lokr_pipe is not pipe:   # a reloaded build came up base — our wrappers died with it
+            self._lokr_sig, self._lokr_paths, self._lokr_pipe = (), [], None
+        specs = list(zip(lora_paths, lora_scales)) if lora_paths else []
+        plain = [(p, s) for p, s in specs if not _is_lokr(p)]
+        lokrs = [(p, s) for p, s in specs if _is_lokr(p)]
+        # Our LoKr wrappers come off before the package re-applies its plain set: set_loras's
+        # unload peels LoRALinear by path and would no-op past a _LoKrLinear sitting on top,
+        # silently missing a plain-set update underneath. Restore + re-wrap is reference
+        # swapping — microseconds — so correctness beats a signature-skip here.
+        _unload_lokrs(pipe.transformer, self._lokr_paths)
+        self._lokr_paths, self._lokr_sig = [], ()
+        # Krea 2 plain LoRA is a runtime low-rank branch (not fused at load), so the set is
+        # applied per generation without reloading — set_loras is a cheap no-op when unchanged,
+        # and clearing it (empty specs) reverts to base when nothing is selected. A wrong-base
+        # LoRA raises here, before any denoise work. Guarded so an old package (no set_loras)
+        # still runs plain. LoKr files never reach it — the backend wraps those itself.
         if hasattr(pipe, "set_loras"):
-            specs = list(zip(lora_paths, lora_scales)) if lora_paths else []
             try:
-                pipe.set_loras(specs)
+                pipe.set_loras(plain)
             except ValueError as e:
                 # Only claim "wrong model" for the base-mismatch signatures — a malformed file
                 # (unpaired A/B, unknown key, collision) raises too, and that hint would mislead.
@@ -143,6 +306,13 @@ class Krea2Backend(Backend):
                                ("doesn't exist in the model tree", "not a linear layer", "shape mismatch"))
                 hint = " A LoRA must be built for Krea 2 Turbo — one made for a different model won't fit." if mismatch else ""
                 raise ValueError(f"Couldn't apply the selected LoRA to Krea 2 Turbo: {e}{hint}") from None
+        if lokrs:
+            try:
+                self._lokr_paths = _apply_lokrs(pipe.transformer, lokrs)
+            except ValueError as e:
+                raise ValueError(f"Couldn't apply the LoKr LoRA to Krea 2 Turbo: {e}") from None
+            self._lokr_sig = tuple(lokrs)
+            self._lokr_pipe = pipe
         return pipe.generate(
             prompt,
             width=int(params.get("width", params.get("size", 1024))),
