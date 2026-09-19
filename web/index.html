@@ -418,7 +418,7 @@ function renderGallery(items){
     grid.appendChild(card);
   });
 }
-function usePrompt(p){prompt.value=p||"";prompt.dispatchEvent(new Event("input"));$("#lightbox").classList.remove("show");toggleGallery(false);prompt.focus();}
+function usePrompt(p){prompt.value=p||"";$("#lightbox").classList.remove("show");toggleGallery(false);prompt.dispatchEvent(new Event("input"));prompt.focus();}
 function dlGalleryImg(it){const a=document.createElement("a");a.href="/api/gallery/"+it.id+".png";a.download="alis_"+it.seed+".png";a.click();}
 function copyText(t,btn){   // swap the icon to a check briefly, so icon buttons keep their glyph
   const flash=()=>{if(btn){const o=btn.innerHTML;btn.innerHTML=SVG_CHECK;setTimeout(()=>{btn.innerHTML=o;},1100);}};
@@ -433,7 +433,7 @@ function openLightbox(it){
   $("#lbUse").onclick=()=>usePrompt($("#lbPrompt").value);
   const rst=$("#lbRestore"),rb=it.model_id&&it.params&&buildOf(it.model_id);
   if(rb&&rb.installed){rst.style.display="";   // never a silent gigabyte download via Restore→Generate
-    rst.onclick=()=>{restoreSettings(it);lb.classList.remove("show");toggleGallery(false);};}
+    rst.onclick=()=>{lb.classList.remove("show");toggleGallery(false);restoreSettings(it);};}
   else rst.style.display="none";
   $("#lbCopy").onclick=e=>copyText($("#lbPrompt").value,e.currentTarget);
   $("#lbDl").onclick=()=>dlGalleryImg(it);
