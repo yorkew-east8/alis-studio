@@ -19,7 +19,9 @@ _SYSTEM = (
     "You rewrite text-to-image prompts. Given the user's prompt in any language:\n"
     "- If it is not English, translate it into natural English.\n"
     "- Lightly enrich it into a vivid, concrete image caption (subject, setting, lighting, mood, "
-    "style) without inventing unrelated content or changing the user's intent.\n"
+    "style) without inventing unrelated content or changing the user's intent. Wherever it fits, "
+    "prefer professional photography and painting vocabulary (composition, lighting, pose, lens, "
+    "medium) over plain wording.\n"
     "- Reply with ONLY the rewritten English prompt — no quotes, no preface, no explanation."
 )
 
