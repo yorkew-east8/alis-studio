@@ -8,6 +8,15 @@ The version lives in exactly one place — `studio/__version__` (in `studio/__in
 `pyproject.toml` reads it via `[tool.setuptools.dynamic]`, the server injects it into the
 web UI, and the DMG build stamps it into the app bundle.
 
+## [Unreleased]
+
+### Fixed
+- **"Use this Prompt" / "Restore settings" didn't auto-grow the Generate prompt box.** Both actions
+  set the textarea and fired its `input` resize handler *before* unhiding the main view
+  (`toggleGallery(false)`), and a `display:none` element reports `scrollHeight` 0 — so the box got
+  `height: 0px` (visually clamped to `min-height` by CSS) and only expanded after the user typed a
+  character. Both callers now unhide the main view before dispatching the resize event.
+
 ## [0.9.3] — 2026-09-14
 
 ### Added
