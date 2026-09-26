@@ -10,6 +10,15 @@ web UI, and the DMG build stamps it into the app bundle.
 
 ## [Unreleased]
 
+### Added
+- **Prev/next navigation in the Gallery lightbox.** An enlarged image now shows ‹ / › buttons pinned
+  to the window's left/right edges (plus ←/→ arrow keys) to walk the gallery in grid order (newest
+  first); they keep a fixed position regardless of image size, hide at the ends, and are suppressed
+  when the open item isn't in the rendered list yet — a just-finished upscale now reloads the
+  gallery *before* reopening its lightbox so it lands in the navigation order. Arrow keys are
+  ignored while typing in the prompt box. Button modifier classes are `.lb-prev`/`.lb-next`, not
+  `.prev`/`.next` — the existing `.prev` rule (main-view preview panel) would force `display:none`.
+
 ### Fixed
 - **"Use this Prompt" / "Restore settings" didn't auto-grow the Generate prompt box.** Both actions
   set the textarea and fired its `input` resize handler *before* unhiding the main view
